@@ -9,3 +9,4 @@ release
 .vscode
 out
 package-lock.json
+public
