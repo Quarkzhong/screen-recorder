@@ -6,7 +6,7 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && electron-builder && node scripts/move-release.js",
+    "build": "vite build && electron-builder",
     "preview": "vite preview",
     "electron:dev": "vite --mode electron",
     "electron:build": "vite build && electron-builder"
@@ -40,7 +40,7 @@
     "appId": "com.screenrecorder.app",
     "productName": "ultraclear-recorder",
     "directories": {
-      "output": "release"
+      "output": "dist"
     },
     "win": {
       "target": [
@@ -50,7 +50,8 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "${productName}_Setup.${ext}"
     },
     "publish": [
       {
