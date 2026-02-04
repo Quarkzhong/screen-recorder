@@ -10,6 +10,27 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getSources: (): Promise<{ id: string; name: string; thumbnail: string }[]> =>
     ipcRenderer.invoke("get-sources"),
 
+  // FFmpeg录制控制
+  ffmpegStartRecording: (config: any): Promise<boolean> =>
+    ipcRenderer.invoke("ffmpeg-start-recording", config),
+  ffmpegStopRecording: (): Promise<string | null> =>
+    ipcRenderer.invoke("ffmpeg-stop-recording"),
+  ffmpegStartReplayBuffer: (config: any): Promise<boolean> =>
+    ipcRenderer.invoke("ffmpeg-start-replay-buffer", config),
+  ffmpegStopReplayBuffer: (): Promise<void> =>
+    ipcRenderer.invoke("ffmpeg-stop-replay-buffer"),
+  ffmpegSaveReplay: (config: any): Promise<string | null> =>
+    ipcRenderer.invoke("ffmpeg-save-replay", config),
+  ffmpegTakeScreenshot: (
+    sourceId: string,
+    savePath: string
+  ): Promise<string | null> =>
+    ipcRenderer.invoke("ffmpeg-take-screenshot", sourceId, savePath),
+  ffmpegGetStatus: (): Promise<{
+    isRecording: boolean;
+    isReplayBuffering: boolean;
+  }> => ipcRenderer.invoke("ffmpeg-get-status"),
+
   // 选择目录
   selectDir: (): Promise<string | null> => ipcRenderer.invoke("select-dir"),
 
@@ -31,7 +52,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getSystemUsage: (): Promise<any> => ipcRenderer.invoke("get-system-usage"),
 
   // 获取磁盘空间信息
-  getDiskInfo: (path: string): Promise<any> => ipcRenderer.invoke("get-disk-info", path),
+  getDiskInfo: (path: string): Promise<any> =>
+    ipcRenderer.invoke("get-disk-info", path),
 
   // 获取默认保存路径
   getDefaultPath: (): Promise<string> => ipcRenderer.invoke("get-default-path"),
@@ -82,7 +104,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
 
   // 打开文件/路径
-  openPath: (path: string): Promise<string> => ipcRenderer.invoke("open-path", path),
+  openPath: (path: string): Promise<string> =>
+    ipcRenderer.invoke("open-path", path),
 
   // 移除事件监听
   removeAllListeners: (channel: string): void => {
@@ -136,6 +159,21 @@ export interface ElectronAPI {
   checkForUpdates: () => void;
   onUpdateMessage: (callback: (message: string) => void) => void;
   onUpdateProgress: (callback: (percent: number) => void) => void;
+
+  // FFmpeg相关接口
+  ffmpegStartRecording: (config: any) => Promise<boolean>;
+  ffmpegStopRecording: () => Promise<string | null>;
+  ffmpegStartReplayBuffer: (config: any) => Promise<boolean>;
+  ffmpegStopReplayBuffer: () => Promise<void>;
+  ffmpegSaveReplay: (config: any) => Promise<string | null>;
+  ffmpegTakeScreenshot: (
+    sourceId: string,
+    savePath: string
+  ) => Promise<string | null>;
+  ffmpegGetStatus: () => Promise<{
+    isRecording: boolean;
+    isReplayBuffering: boolean;
+  }>;
 }
 
 declare global {

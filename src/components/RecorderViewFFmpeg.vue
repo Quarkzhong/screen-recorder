@@ -20,7 +20,7 @@
             />
             <circle cx="12" cy="12" r="4" fill="#ef4444" />
             <path
-              d="M12 2v2M12 20v2M2 12h2M20 12h2"
+              d="M12 2v2M12 20v2M2 12h2M20 12h2M6.34 6.34L4.93 4.93M19.07 4.93l-1.41 1.41M6.34 17.66l-1.41 1.41M19.07 19.07l-1.41-1.41"
               stroke="currentColor"
               stroke-width="2"
               stroke-linecap="round"
@@ -499,20 +499,9 @@
 </template>
 
 <script setup lang="ts">
-import {
-  ref,
-  reactive,
-  computed,
-  onMounted,
-  onUnmounted,
-  watch,
-  shallowRef,
-} from "vue";
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from "vue";
 import { ElMessage, ElNotification } from "element-plus";
 import VideoPreview from "./VideoPreview.vue";
-
-// 移除不再需要的导入
-// import fixWebmDuration from 'fix-webm-duration'
 
 // ==================== 类型定义 ====================
 interface RecorderConfig {
@@ -543,13 +532,9 @@ const isRecording = ref(false);
 const isReplayRecording = ref(false);
 const isStarting = ref(false);
 const recordingDuration = ref(0); // 秒
-
-// FFmpeg录制状态
 const recordingStartTime = ref<number>(0);
-const isFFmpegReady = ref<boolean>(true);
 
 let durationTimer: ReturnType<typeof setInterval> | null = null;
-let replayCleanupTimer: ReturnType<typeof setInterval> | null = null;
 let monitorTimer: ReturnType<typeof setInterval> | null = null;
 let sourceTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -612,22 +597,6 @@ function selectSource(id: string) {
   if (!isRecording.value) {
     config.sourceId = id;
   }
-}
-
-function getMimeType(format: string): string {
-  if (format === "mp4") {
-    if (MediaRecorder.isTypeSupported("video/mp4;codecs=avc1"))
-      return "video/mp4;codecs=avc1";
-    if (MediaRecorder.isTypeSupported("video/mp4;codecs=h264"))
-      return "video/mp4;codecs=h264";
-    return "video/mp4";
-  }
-  if (format === "mkv") {
-    if (MediaRecorder.isTypeSupported("video/x-matroska;codecs=avc1"))
-      return "video/x-matroska;codecs=avc1";
-    return "video/webm;codecs=vp9";
-  }
-  return "video/webm;codecs=vp9";
 }
 
 function generateFileName(prefix: string = "recording"): string {
@@ -760,45 +729,7 @@ watch(
   { deep: true }
 );
 
-// ==================== 录制核心 ====================
-
-// 获取视频流
-async function getDisplayMediaStream(): Promise<MediaStream> {
-  const constraints: any = {
-    audio: false, // 暂时不录音以简化
-    video: {
-      mandatory: {
-        chromeMediaSource: "desktop",
-        chromeMediaSourceId: config.sourceId,
-        minFrameRate: config.frameRate,
-        maxFrameRate: 60,
-        maxWidth: 7680,
-        maxHeight: 4320,
-      },
-    },
-  };
-
-  try {
-    return await navigator.mediaDevices.getUserMedia(constraints);
-  } catch (err) {
-    console.warn(
-      "Failed with primary constraints, retrying with minimal...",
-      err
-    );
-    const fallbackConstraints = {
-      audio: false,
-      video: {
-        mandatory: {
-          chromeMediaSource: "desktop",
-          chromeMediaSourceId: config.sourceId,
-          minFrameRate: config.frameRate,
-          maxFrameRate: 60,
-        },
-      },
-    } as any;
-    return await navigator.mediaDevices.getUserMedia(fallbackConstraints);
-  }
-}
+// ==================== FFmpeg录制核心 ====================
 
 async function toggleRecording() {
   if (isRecording.value) {
@@ -814,54 +745,42 @@ async function startRecording() {
 
   try {
     // 停止回溯缓冲
-    stopReplayBuffer();
+    await window.electronAPI.ffmpegStopReplayBuffer();
 
-    mediaStream.value = await getDisplayMediaStream();
-
-    const mimeType = getMimeType(config.format);
-    mediaRecorder.value = new MediaRecorder(mediaStream.value, {
-      mimeType,
-      videoBitsPerSecond: config.bitRate * 1000,
-    });
-
-    recordedChunks.value = [];
-
-    mediaRecorder.value.ondataavailable = (event) => {
-      if (event.data.size > 0) {
-        recordedChunks.value.push(event.data);
-      }
+    // 使用FFmpeg开始录制
+    const ffmpegConfig = {
+      sourceId: config.sourceId,
+      frameRate: config.frameRate,
+      bitRate: config.bitRate,
+      format: config.format,
+      savePath: config.savePath,
     };
 
-    mediaRecorder.value.onstop = () => {
-      saveRecording();
-    };
+    const result = await window.electronAPI.ffmpegStartRecording(ffmpegConfig);
 
-    // 监控轨道停止（如外部断开）
-    mediaStream.value.getVideoTracks()[0].onended = () => {
-      if (isRecording.value) stopRecording();
-    };
+    if (result) {
+      isRecording.value = true;
+      recordingStartTime.value = Date.now();
+      recordingDuration.value = 0;
+      durationTimer = setInterval(() => {
+        recordingDuration.value++;
+      }, 1000);
 
-    mediaRecorder.value.start(1000); // 每秒触发一次 ondataavailable
+      window.electronAPI.updateRecordingStatus({
+        isRecording: true,
+        isReplay: false,
+      });
 
-    isRecording.value = true;
-    startTime.value = Date.now();
-    recordingDuration.value = 0;
-    durationTimer = setInterval(() => {
-      recordingDuration.value++;
-    }, 1000);
-
-    window.electronAPI.updateRecordingStatus({
-      isRecording: true,
-      isReplay: false,
-    });
-
-    ElNotification({
-      title: "录制已开始",
-      message: "按 F12 或点击按钮停止",
-      type: "success",
-      duration: 2000,
-      position: "bottom-right",
-    });
+      ElNotification({
+        title: "录制已开始",
+        message: "按 F12 或点击按钮停止",
+        type: "success",
+        duration: 2000,
+        position: "bottom-right",
+      });
+    } else {
+      throw new Error("FFmpeg启动录制失败");
+    }
   } catch (error: any) {
     console.error("Start recording failed:", error);
     ElMessage.error("启动录制失败: " + error.message);
@@ -873,137 +792,64 @@ async function startRecording() {
 }
 
 async function stopRecording() {
-  if (!isRecording.value || !mediaRecorder.value) return;
-
-  if (durationTimer) {
-    clearInterval(durationTimer);
-    durationTimer = null;
-  }
-
-  if (mediaRecorder.value.state === "recording") {
-    mediaRecorder.value.requestData();
-  }
-
-  // 延迟停止以确保最后的数据被收集
-  setTimeout(() => {
-    mediaRecorder.value?.stop();
-    mediaStream.value?.getTracks().forEach((track) => track.stop());
-  }, 100);
-
-  isRecording.value = false;
-  window.electronAPI.updateRecordingStatus({
-    isRecording: false,
-    isReplay: false,
-  });
-
-  // 录制停止后重新开启回溯缓冲
-  setTimeout(() => {
-    startReplayBuffer();
-  }, 500);
-}
-
-async function saveRecording() {
-  if (recordedChunks.value.length === 0) return;
-
-  const blob = new Blob(recordedChunks.value, {
-    type: getMimeType(config.format),
-  });
-  let finalBlob = blob;
-  const fileName = `${generateFileName("recording")}.${config.format}`;
-
-  // 对于 WebM/MKV 格式，尝试修复时长（MediaRecorder 生成的流通常没有时长索引）
-  if (config.format === "webm" || config.format === "mkv") {
-    const duration = Date.now() - startTime.value;
-    try {
-      finalBlob = await new Promise<Blob>((resolve) => {
-        setTimeout(() => {
-          fixWebmDuration(blob, duration, (fixed) => resolve(fixed));
-        }, 10);
-      });
-    } catch (e) {
-      console.warn(
-        `Failed to fix ${config.format} duration, saving original:`,
-        e
-      );
-    }
-  }
+  if (!isRecording.value) return;
 
   try {
-    await saveFile(finalBlob, fileName);
-    ElNotification({
-      title: "录制完成",
-      message: `已保存: ${fileName}`,
-      type: "success",
-      duration: 3000,
-      position: "bottom-right",
-    });
-  } catch (e: any) {
-    ElMessage.error("保存文件失败: " + e.message);
-  }
+    if (durationTimer) {
+      clearInterval(durationTimer);
+      durationTimer = null;
+    }
 
-  recordedChunks.value = [];
+    // 使用FFmpeg停止录制
+    const result = await window.electronAPI.ffmpegStopRecording();
+
+    isRecording.value = false;
+    window.electronAPI.updateRecordingStatus({
+      isRecording: false,
+      isReplay: false,
+    });
+
+    if (result) {
+      ElNotification({
+        title: "录制完成",
+        message: `已保存: ${result.split("/").pop()}`,
+        type: "success",
+        duration: 3000,
+        position: "bottom-right",
+      });
+    }
+
+    // 录制停止后重新开启回溯缓冲
+    setTimeout(() => {
+      startReplayBuffer();
+    }, 500);
+  } catch (error: any) {
+    console.error("Stop recording failed:", error);
+    ElMessage.error("停止录制失败: " + error.message);
+  }
 }
 
 // ==================== 回溯缓冲逻辑 ====================
 
 async function startReplayBuffer() {
-  if (replayRecorder.value || isRecording.value) return;
+  if (isRecording.value) return;
 
   try {
-    replayStream.value = await getDisplayMediaStream();
-    replayRecorder.value = new MediaRecorder(replayStream.value, {
-      mimeType: getMimeType(config.format),
-      videoBitsPerSecond: config.replayBitRate * 1000,
-    });
-
-    replayBuffer.value = [];
-
-    replayRecorder.value.ondataavailable = (event) => {
-      if (event.data.size > 0) {
-        replayBuffer.value.push({
-          blob: event.data,
-          timestamp: Date.now(),
-        });
-      }
+    const ffmpegConfig = {
+      sourceId: config.sourceId,
+      frameRate: 30, // 回溯使用较低帧率
+      bitRate: config.replayBitRate,
+      format: "mkv",
+      savePath: config.savePath,
     };
 
-    replayStream.value.getVideoTracks()[0].onended = () => {
-      stopReplayBuffer();
-    };
-
-    replayRecorder.value.start(1000);
-
-    // 定期清理过期缓冲
-    replayCleanupTimer = setInterval(() => {
-      const cutoff = Date.now() - REPLAY_DURATION;
-      replayBuffer.value = replayBuffer.value.filter(
-        (c) => c.timestamp > cutoff
-      );
-    }, 10000);
+    await window.electronAPI.ffmpegStartReplayBuffer(ffmpegConfig);
   } catch (error) {
     console.error("启动回溯缓冲失败:", error);
   }
 }
 
-function stopReplayBuffer() {
-  if (replayCleanupTimer) {
-    clearInterval(replayCleanupTimer);
-    replayCleanupTimer = null;
-  }
-  if (replayRecorder.value && replayRecorder.value.state !== "inactive") {
-    replayRecorder.value.stop();
-  }
-  replayRecorder.value = null;
-  replayStream.value?.getTracks().forEach((track) => track.stop());
-  replayStream.value = null;
-}
-
 async function saveReplayRecording() {
-  if (replayBuffer.value.length === 0) {
-    ElMessage.warning("回溯缓冲区为空");
-    return;
-  }
-
   isReplayRecording.value = true;
   window.electronAPI.updateRecordingStatus({
     isRecording: false,
@@ -1011,29 +857,27 @@ async function saveReplayRecording() {
   });
 
   try {
-    const cutoff = Date.now() - REPLAY_DURATION;
-    const chunks = replayBuffer.value
-      .filter((c) => c.timestamp > cutoff)
-      .map((c) => c.blob);
+    const ffmpegConfig = {
+      sourceId: config.sourceId,
+      frameRate: config.frameRate,
+      bitRate: config.bitRate,
+      format: "mkv",
+      savePath: config.savePath,
+    };
 
-    if (chunks.length === 0) {
+    const result = await window.electronAPI.ffmpegSaveReplay(ffmpegConfig);
+
+    if (result) {
+      ElNotification({
+        title: "回溯录制完成",
+        message: `已保存: ${result.split("/").pop()}`,
+        type: "success",
+        duration: 3000,
+        position: "bottom-right",
+      });
+    } else {
       ElMessage.warning("没有可用的回溯数据");
-      return;
     }
-
-    const blob = new Blob(chunks, { type: getMimeType(config.format) });
-    // 回溯暂不支持 WebM 时长修复，因为它是分段合并的，直接存为 mkv
-    const fileName = `${generateFileName("replay")}.mkv`;
-
-    await saveFile(blob, fileName);
-
-    ElNotification({
-      title: "回溯录制完成",
-      message: `已保存: ${fileName}`,
-      type: "success",
-      duration: 3000,
-      position: "bottom-right",
-    });
   } catch (e: any) {
     ElMessage.error("保存回溯失败: " + e.message);
   } finally {
@@ -1049,64 +893,21 @@ async function saveReplayRecording() {
 
 async function takeScreenshot() {
   try {
-    let stream: MediaStream | null = null;
-    let needsCleanup = false;
+    const result = await window.electronAPI.ffmpegTakeScreenshot(
+      config.sourceId,
+      config.savePath
+    );
 
-    // 如果当前正在录制，尝试从录制流直接捕获
-    if (isRecording.value && mediaStream.value) {
-      stream = mediaStream.value;
+    if (result) {
+      ElNotification({
+        title: "截图完成",
+        message: `已保存: ${result.split("/").pop()}`,
+        type: "success",
+        duration: 2000,
+        position: "bottom-right",
+      });
     } else {
-      const constraints = {
-        audio: false,
-        video: {
-          mandatory: {
-            chromeMediaSource: "desktop",
-            chromeMediaSourceId: config.sourceId,
-            maxWidth: 7680,
-            maxHeight: 4320,
-          },
-        },
-      } as any;
-      stream = await navigator.mediaDevices.getUserMedia(constraints);
-      needsCleanup = true;
-    }
-
-    const video = document.createElement("video");
-    video.srcObject = stream;
-    video.muted = true;
-
-    await new Promise<void>((resolve, reject) => {
-      let timeout = setTimeout(() => reject("Video load timeout"), 3000);
-      video.onloadedmetadata = () => {
-        video
-          .play()
-          .then(() => {
-            clearTimeout(timeout);
-            resolve();
-          })
-          .catch(reject);
-      };
-    });
-
-    // 等待一帧缓冲
-    await new Promise((r) => setTimeout(r, 200));
-
-    const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext("2d");
-    if (ctx) {
-      ctx.drawImage(video, 0, 0);
-      const blob = await new Promise<Blob | null>((resolve) =>
-        canvas.toBlob(resolve, "image/png")
-      );
-      if (blob) {
-        await saveScreenshotBlob(blob);
-      }
-    }
-
-    if (needsCleanup && stream) {
-      stream.getTracks().forEach((track) => track.stop());
+      ElMessage.error("截图失败");
     }
   } catch (error: any) {
     console.error("Take screenshot failed:", error);
@@ -1114,38 +915,9 @@ async function takeScreenshot() {
   }
 }
 
-async function saveScreenshotBlob(blob: Blob) {
-  const fileName = `${generateFileName("screenshot")}.png`;
-  await saveFile(blob, fileName);
-  ElNotification({
-    title: "截图完成",
-    message: `已保存: ${fileName}`,
-    type: "success",
-    duration: 2000,
-    position: "bottom-right",
-  });
-}
-
 // ==================== 更新逻辑 ====================
 function checkForUpdates() {
   window.electronAPI.checkForUpdates();
-}
-
-// ==================== 文件保存逻辑 ====================
-
-async function saveFile(blob: Blob, fileName: string) {
-  const arrayBuffer = await blob.arrayBuffer();
-  const data = Array.from(new Uint8Array(arrayBuffer));
-
-  const filePath = `${config.savePath}/${fileName}`;
-  const result = await window.electronAPI.saveFile({
-    filePath,
-    data,
-  });
-
-  if (!result.success) {
-    throw new Error(result.error || "保存失败");
-  }
 }
 
 // ==================== 生命周期 ====================
@@ -1198,12 +970,11 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (durationTimer) clearInterval(durationTimer);
-  if (replayCleanupTimer) clearInterval(replayCleanupTimer);
   if (monitorTimer) clearInterval(monitorTimer);
   if (sourceTimer) clearInterval(sourceTimer);
 
-  mediaStream.value?.getTracks().forEach((track) => track.stop());
-  stopReplayBuffer();
+  // 清理FFmpeg资源
+  window.electronAPI.ffmpegStopReplayBuffer();
 
   window.electronAPI.removeAllListeners("toggle-recording");
   window.electronAPI.removeAllListeners("replay-recording");
@@ -1213,6 +984,7 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* 保持原有的样式不变 */
 .recorder-view {
   display: flex;
   flex-direction: column;
@@ -1251,7 +1023,7 @@ onUnmounted(() => {
   --border-color: rgba(0, 0, 0, 0.08);
 }
 
-/* 顶部标题栏 */
+/* 其余样式保持不变，这里省略重复内容 */
 .title-bar {
   display: flex;
   justify-content: space-between;

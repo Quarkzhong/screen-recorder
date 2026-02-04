@@ -68,7 +68,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
-import RecorderView from "./components/RecorderView.vue";
+import RecorderView from "./components/RecorderViewFFmpeg.vue";
 
 const showGuide = ref(false);
 

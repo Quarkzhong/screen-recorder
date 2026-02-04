@@ -23,6 +23,7 @@ import os from "os";
 import checkDiskSpace from "check-disk-space";
 import osUtils from "os-utils";
 import { autoUpdater } from "electron-updater";
+import FFmpegService from "./services/ffmpegService";
 
 // 配置存储
 const APP_NAME = "UltraClear Recorder";
@@ -46,13 +47,16 @@ let tray: Tray | null = null;
 let isRecording = false;
 let isReplayRecording = false;
 
+// 初始化FFmpeg服务
+const ffmpegService = new FFmpegService();
+
 // 创建主窗口
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 480,
     height: 620,
     title: APP_NAME,
-    resizable: true, 
+    resizable: true,
     maximizable: false,
     fullscreenable: false,
     frame: false, // Hide native frame
@@ -79,7 +83,10 @@ function createWindow() {
     mainWindow?.webContents.send("update-message", "正在检查更新...");
   });
   autoUpdater.on("update-available", (info) => {
-    mainWindow?.webContents.send("update-message", `发现新版本 ${info.version}，正在下载...`);
+    mainWindow?.webContents.send(
+      "update-message",
+      `发现新版本 ${info.version}，正在下载...`
+    );
   });
   autoUpdater.on("update-not-available", () => {
     mainWindow?.webContents.send("update-message", "当前已是最新版本");
@@ -91,17 +98,22 @@ function createWindow() {
     mainWindow?.webContents.send("update-progress", progressObj.percent);
   });
   autoUpdater.on("update-downloaded", () => {
-    mainWindow?.webContents.send("update-message", "新版本已下载完成，退出应用后将自动安装。");
-    dialog.showMessageBox({
-      type: "info",
-      title: "更新完成",
-      message: "新版本已下载完成，是否立即重启以安装更新？",
-      buttons: ["是", "否"]
-    }).then((result) => {
-      if (result.response === 0) {
-        autoUpdater.quitAndInstall();
-      }
-    });
+    mainWindow?.webContents.send(
+      "update-message",
+      "新版本已下载完成，退出应用后将自动安装。"
+    );
+    dialog
+      .showMessageBox({
+        type: "info",
+        title: "更新完成",
+        message: "新版本已下载完成，是否立即重启以安装更新？",
+        buttons: ["是", "否"],
+      })
+      .then((result) => {
+        if (result.response === 0) {
+          autoUpdater.quitAndInstall();
+        }
+      });
   });
 
   // 应用启动后检查更新
@@ -127,7 +139,7 @@ function createWindow() {
 // 创建托盘图标（程序化生成）
 function getIconPath(): string {
   // 生产环境下运行在 dist-electron
-  const iconFileName = process.platform === 'win32' ? 'icon.ico' : 'icon.png';
+  const iconFileName = process.platform === "win32" ? "icon.ico" : "icon.png";
   const path1 = join(__dirname, "..", "src", "assets", iconFileName); // dev
   const path2 = join(__dirname, "..", "public", iconFileName); // build
   const path3 = join(__dirname, iconFileName); // some build structures
@@ -142,10 +154,13 @@ function createTrayIcon(isRecording: boolean): nativeImage {
   if (existsSync(iconPath)) {
     return nativeImage.createFromPath(iconPath);
   }
-  
+
   // Fallback if file not found
-  const idleIconBase64 = "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAAAdgAAAHYBTnsmCAAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAADMSURBVDiNpZMxDoMwDEV/nB6hQzcuw9KNI7D2Al04A2sP0A3YujGwsHQjOQLLdQZQ1UCbtlLl6cv/2XasAP9WOZNfgCegBFrgLvPewBlYA0fgIHMP8AwMgRfg5RnkngLeZH5S+pC5DZz0rNsAngGb+uFCvgJWsucaKIGbzD8Dg8Ag6AB7oAA2Mt8Dw8AoGAJ7YALc5/2tYBQMgT6wBGbAg8xvBGOgDwTAGpgDTzLfCMbAJBgAK2AOPMr8SjAG+kAArIAqcC/zf+I3fAAU/EcYaMABsQAAAABJRU5ErkJggg==";
-  return nativeImage.createFromDataURL(`data:image/png;base64,${idleIconBase64}`);
+  const idleIconBase64 =
+    "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAAAdgAAAHYBTnsmCAAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAADMSURBVDiNpZMxDoMwDEV/nB6hQzcuw9KNI7D2Al04A2sP0A3YujGwsHQjOQLLdQZQ1UCbtlLl6cv/2XasAP9WOZNfgCegBFrgLvPewBlYA0fgIHMP8AwMgRfg5RnkngLeZH5S+pC5DZz0rNsAngGb+uFCvgJWsucaKIGbzD8Dg8Ag6AB7oAA2Mt8Dw8AoGAJ7YALc5/2tYBQMgT6wBGbAg8xvBGOgDwTAGpgDTzLfCMbAJBgAK2AOPMr8SjAG+kAArIAqcC/zf+I3fAAU/EcYaMABsQAAAABJRU5ErkJggg==";
+  return nativeImage.createFromDataURL(
+    `data:image/png;base64,${idleIconBase64}`
+  );
 }
 
 // 创建系统托盘
@@ -229,26 +244,20 @@ function registerShortcuts() {
     } else {
       console.error(`[快捷键] ${key} (${name}) 注册失败，可能被其他程序占用`);
       // 尝试备用快捷键
-      const altKey = `CommandOrControl+Shift+${key.replace("F", "").replace("CommandOrControl+", "")}`;
-       // 修正 altKey 逻辑，简单起见如果 CommandOrControl 注册失败，尝试不带 control ?? 不，这里逻辑有点乱，先保留原样或简单修复
-       // 上面原代码里的逻辑是 CommandOrControl+Shift+...
+      const altKey = `CommandOrControl+Shift+${key
+        .replace("F", "")
+        .replace("CommandOrControl+", "")}`;
+      // 修正 altKey 逻辑，简单起见如果 CommandOrControl 注册失败，尝试不带 control ?? 不，这里逻辑有点乱，先保留原样或简单修复
+      // 上面原代码里的逻辑是 CommandOrControl+Shift+...
     }
   }
 }
 
 // IPC 事件处理
 function setupIPC() {
-  // 获取屏幕源列表（仅获取屏幕，不获取窗口）
+  // 获取屏幕源列表（使用FFmpeg服务）
   ipcMain.handle("get-sources", async () => {
-    const sources = await desktopCapturer.getSources({
-      types: ["screen"],
-      thumbnailSize: { width: 150, height: 150 },
-    });
-    return sources.map((source) => ({
-      id: source.id,
-      name: source.name,
-      thumbnail: source.thumbnail.toDataURL(),
-    }));
+    return await ffmpegService.getScreenSources();
   });
 
   // 打开文件/路径
@@ -364,7 +373,7 @@ function setupIPC() {
       totalMem: os.totalmem(),
       osPlatform: os.platform(),
       osRelease: os.release(),
-      arch: os.arch()
+      arch: os.arch(),
     };
   });
 
@@ -395,6 +404,58 @@ function setupIPC() {
       console.error("Failed to get disk info:", error);
       return null;
     }
+  });
+
+  // FFmpeg录制控制
+  ipcMain.handle("ffmpeg-start-recording", async (_, config) => {
+    const result = await ffmpegService.startRecording(config);
+    if (result) {
+      isRecording = true;
+      updateTrayIcon(true);
+      updateTrayMenu();
+    }
+    return result;
+  });
+
+  ipcMain.handle("ffmpeg-stop-recording", async () => {
+    const result = await ffmpegService.stopRecording();
+    isRecording = false;
+    updateTrayIcon(false);
+    updateTrayMenu();
+    return result;
+  });
+
+  ipcMain.handle("ffmpeg-start-replay-buffer", async (_, config) => {
+    return await ffmpegService.startReplayBuffer(config);
+  });
+
+  ipcMain.handle("ffmpeg-stop-replay-buffer", async () => {
+    await ffmpegService.stopReplayBuffer();
+  });
+
+  ipcMain.handle("ffmpeg-save-replay", async (_, config) => {
+    isReplayRecording = true;
+    updateTrayIcon(true);
+    updateTrayMenu();
+
+    const result = await ffmpegService.saveReplayRecording(config);
+
+    isReplayRecording = false;
+    updateTrayIcon(false);
+    updateTrayMenu();
+
+    return result;
+  });
+
+  ipcMain.handle(
+    "ffmpeg-take-screenshot",
+    async (_, sourceId: string, savePath: string) => {
+      return await ffmpegService.takeScreenshot(sourceId, savePath);
+    }
+  );
+
+  ipcMain.handle("ffmpeg-get-status", () => {
+    return ffmpegService.getRecordingStatus();
   });
 
   // 手动检查更新
