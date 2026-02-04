@@ -127,6 +127,7 @@ export interface ScreenSource {
   id: string;
   name: string;
   thumbnail: string;
+  display_id: string;
 }
 
 export interface ElectronAPI {

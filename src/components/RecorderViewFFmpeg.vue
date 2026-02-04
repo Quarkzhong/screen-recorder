@@ -203,7 +203,7 @@
               :key="source.id"
               class="source-card"
               :class="{ active: config.sourceId === source.id }"
-              @click="selectSource(source.id)"
+              @click="selectSource(source.id, source.display_id)"
             >
               <div class="source-thumb">
                 <VideoPreview
@@ -511,6 +511,7 @@ interface RecorderConfig {
   replayBitRate: number;
   format: "mp4" | "mkv" | "webm";
   savePath: string;
+  display_id: string;
 }
 
 // ==================== 响应式状态 ====================
@@ -519,6 +520,7 @@ const appName = ref("UltraClear Recorder");
 
 const config = reactive<RecorderConfig>({
   sourceId: "screen:0:0",
+  display_id: "",
   frameRate: 60,
   bitRate: 50000,
   replayBitRate: 15000,
@@ -526,7 +528,9 @@ const config = reactive<RecorderConfig>({
   savePath: "",
 });
 
-const sources = ref<{ id: string; name: string; thumbnail: string }[]>([]);
+const sources = ref<
+  { id: string; name: string; thumbnail: string; display_id: string }[]
+>([]);
 
 const isRecording = ref(false);
 const isReplayRecording = ref(false);
@@ -593,9 +597,10 @@ function formatBitrate(kbps: number): string {
   return kbps >= 1000 ? `${(kbps / 1000).toFixed(0)} Mbps` : `${kbps} Kbps`;
 }
 
-function selectSource(id: string) {
+function selectSource(id: string, display_id: string) {
   if (!isRecording.value) {
     config.sourceId = id;
+    config.display_id = display_id;
   }
 }
 
@@ -676,21 +681,12 @@ async function refreshDiskInfo() {
 
 async function refreshSources() {
   try {
-    const _sources = await window.electronAPI.getSources();
-    // 优先保留带有 "screen" 关键字的源（显示器）
-    const screenSources = _sources.filter(
-      (s) =>
-        s.name.toLowerCase().includes("screen") ||
-        s.name.includes("屏幕") ||
-        s.id.startsWith("screen:")
-    );
-    sources.value = screenSources.length > 0 ? screenSources : _sources;
-
     if (
       !sources.value.find((s) => s.id === config.sourceId) &&
       sources.value.length > 0
     ) {
       config.sourceId = sources.value[0].id;
+      config.display_id = sources.value[0].display_id;
     }
   } catch (e) {
     console.error("Failed to get sources", e);
@@ -749,7 +745,7 @@ async function startRecording() {
 
     // 使用FFmpeg开始录制
     const ffmpegConfig = {
-      sourceId: config.sourceId,
+      sourceId: config.display_id,
       frameRate: config.frameRate,
       bitRate: config.bitRate,
       format: config.format,
@@ -836,7 +832,7 @@ async function startReplayBuffer() {
 
   try {
     const ffmpegConfig = {
-      sourceId: config.sourceId,
+      sourceId: config.display_id,
       frameRate: 30, // 回溯使用较低帧率
       bitRate: config.replayBitRate,
       format: "mkv",
@@ -931,7 +927,10 @@ onMounted(async () => {
   sysInfo.value = await window.electronAPI.getSystemInfo();
   refreshMonitorData();
   monitorTimer = setInterval(refreshMonitorData, 2000);
-
+  const _sources = await window.electronAPI.getSources();
+  // 优先保留带有 "screen" 关键字的源（显示器）
+  sources.value = _sources;
+  config.sourceId = _sources[0].id;
   await refreshSources();
   sourceTimer = setInterval(refreshSources, 5000);
 

@@ -25,6 +25,7 @@ import { join } from "path";
 import { existsSync, mkdirSync, writeFileSync, unlinkSync } from "fs";
 
 interface RecordingConfig {
+  display_id: string;
   sourceId: string;
   frameRate: number;
   bitRate: number;
@@ -55,7 +56,7 @@ export default class FFmpegService {
    * 获取屏幕源列表
    */
   async getScreenSources(): Promise<
-    { id: string; name: string; thumbnail: string }[]
+    { id: string; name: string; thumbnail: string; display_id: string }[]
   > {
     try {
       const sources = await desktopCapturer.getSources({
@@ -65,6 +66,7 @@ export default class FFmpegService {
 
       return sources.map((source) => ({
         id: source.id,
+        display_id: source.display_id,
         name: source.name,
         thumbnail: source.thumbnail.toDataURL(),
       }));
@@ -319,8 +321,17 @@ export default class FFmpegService {
     };
   }
 
-  getDisplayBounds() {
-    const displays = screen;
+  /**
+   * 获取所有显示器的信息和边界
+   */
+  private getDisplayBounds() {
+    try {
+      const displays = screen.getAllDisplays();
+
+      return displays;
+    } catch (error) {
+      return [];
+    }
   }
   /**
    * 构建FFmpeg命令
@@ -332,22 +343,17 @@ export default class FFmpegService {
     // 根据sourceId确定输入设备和裁剪参数
     let inputDevice = "desktop";
     let videoFilter = "scale=trunc(iw/2)*2:trunc(ih/2)*2";
-    const displays = this.getDisplayBounds();
-    console.log("[ displays ]-337", config);
+
     // 如果指定了特定屏幕，使用裁剪过滤器
     if (config.sourceId) {
-      console.log("[FFmpegService] 使用指定屏幕源:", config.sourceId);
-
-      // 临时使用通用的裁剪参数进行测试
-      //   if (config.sourceId === "screen:1:0") {
-      //     // 为第二个屏幕设置裁剪区域
-      //     videoFilter = "crop=1920:1080:1920:0,scale=trunc(iw/2)*2:trunc(ih/2)*2";
-      //     console.log("[FFmpegService] 为屏幕2设置裁剪: crop=1920:1080:1920:0");
-      //   } else if (config.sourceId === "screen:0:0") {
-      //     // 为第一个屏幕设置裁剪区域
-      //     videoFilter = "crop=1920:1080:0:0,scale=trunc(iw/2)*2:trunc(ih/2)*2";
-      //     console.log("[FFmpegService] 为屏幕1设置裁剪: crop=1920:1080:0:0");
-      //   }
+      const displays = this.getDisplayBounds();
+      const display = displays.find((i) => i.id + "" === config.sourceId);
+      console.log("[ display ]-353", display);
+      if (display) {
+        const { x, y, width, height } = display.bounds;
+        videoFilter = `crop=${width}:${height}:${x}:${y},scale=trunc(iw/2)*2:trunc(ih/2)*2`;
+        console.log("[ videoFilter ]-357", videoFilter);
+      }
     } else {
       console.log("[FFmpegService] 录制全部屏幕");
     }
@@ -428,10 +434,7 @@ export default class FFmpegService {
       );
       console.log(`[FFmpegService] 输出路径:`, outputPath);
 
-      const process = spawn(
-        ffmpegPath.path.replace("app.asar", "app.asar.unpacked"),
-        command
-      );
+      const process = spawn(getFFmpegPath(), command);
 
       this.setupProcessHandlers(process, `分段录制-${timestamp}`);
 
@@ -545,10 +548,7 @@ export default class FFmpegService {
         outputPath,
       ];
 
-      const process = spawn(
-        ffmpegPath.path.replace("app.asar", "app.asar.unpacked"),
-        command
-      );
+      const process = spawn(getFFmpegPath(), command);
 
       process.on("close", (code) => {
         if (code === 0 && existsSync(outputPath)) {
