@@ -1,11 +1,17 @@
-// 动态导入FFmpeg路径
 const getFFmpegPath = () => {
   try {
-    const ffmpeg = require("@ffmpeg-installer/ffmpeg");
-    return ffmpeg.path.replace("app.asar", "app.asar.unpacked");
+    // ffmpeg-static 直接导出路径字符串
+    let ffmpegPath = require("ffmpeg-static");
+
+    // 处理 Electron ASAR 打包问题（仅当路径包含 app.asar 时替换）
+    if (ffmpegPath.includes("app.asar")) {
+      ffmpegPath = ffmpegPath.replace("app.asar", "app.asar.unpacked");
+    }
+
+    return ffmpegPath;
   } catch (error) {
     console.error("FFmpeg path error:", error);
-    // 返回默认路径作为后备
+    // 后备：依赖系统 PATH 中的 ffmpeg
     return "ffmpeg";
   }
 };
@@ -275,21 +281,51 @@ export default class FFmpegService {
         mkdirSync(savePath, { recursive: true });
       }
 
+      // 获取物理像素坐标
+      let x = 0;
+      let y = 0;
+      let width = 0;
+      let height = 0;
+      let useOffsets = false;
+
+      if (sourceId) {
+        const displays = this.getDisplayBounds();
+        const display = displays.find((i) => i.id + "" === sourceId);
+        if (display) {
+          const scale = display.scaleFactor || 1;
+          x = Math.round(display.bounds.x * scale);
+          y = Math.round(display.bounds.y * scale);
+          width = Math.round(display.bounds.width * scale);
+          height = Math.round(display.bounds.height * scale);
+          useOffsets = true;
+        }
+      }
+
       // 构建截图命令
       const command = [
         "-f",
         "gdigrab",
+      ];
+
+      if (useOffsets) {
+        command.push("-offset_x", x.toString());
+        command.push("-offset_y", y.toString());
+        command.push("-video_size", `${width}x${height}`);
+      }
+
+      command.push(
         "-i",
         "desktop",
         "-vframes",
         "1",
         "-y",
-        outputPath,
-      ];
+        outputPath
+      );
 
+      console.log("[FFmpegService] 执行截图:", command.join(" "));
       const process = spawn(getFFmpegPath(), command);
 
-      return new Promise((resolve, reject) => {
+      return new Promise((resolve) => {
         process.on("close", (code) => {
           if (code === 0 && existsSync(outputPath)) {
             console.log("[FFmpegService] 截图保存完成:", outputPath);
@@ -343,19 +379,30 @@ export default class FFmpegService {
     // 根据sourceId确定输入设备和裁剪参数
     let inputDevice = "desktop";
     let videoFilter = "scale=trunc(iw/2)*2:trunc(ih/2)*2";
+    let x = 0;
+    let y = 0;
+    let width = 0;
+    let height = 0;
+    let useOffsets = false;
 
-    // 如果指定了特定屏幕，使用裁剪过滤器
+    // 如果指定了特定屏幕，获取物理像素坐标
     if (config.sourceId) {
       const displays = this.getDisplayBounds();
       const display = displays.find((i) => i.id + "" === config.sourceId);
-      console.log("[ display ]-353", display);
+      console.log("[FFmpegService] 匹配显示器:", config.sourceId, display);
+      
       if (display) {
-        const { x, y, width, height } = display.bounds;
-        videoFilter = `crop=${width}:${height}:${x}:${y},scale=trunc(iw/2)*2:trunc(ih/2)*2`;
-        console.log("[ videoFilter ]-357", videoFilter);
+        const scale = display.scaleFactor || 1;
+        x = Math.round(display.bounds.x * scale);
+        y = Math.round(display.bounds.y * scale);
+        width = Math.round(display.bounds.width * scale);
+        height = Math.round(display.bounds.height * scale);
+        useOffsets = true;
+        
+        // 仍然建议使用 scale 滤镜确保宽高为偶数，这是 H.264 编码的要求
+        videoFilter = "scale=trunc(iw/2)*2:trunc(ih/2)*2";
+        console.log(`[FFmpegService] 物理区域: ${width}x${height} offset: ${x},${y}`);
       }
-    } else {
-      console.log("[FFmpegService] 录制全部屏幕");
     }
 
     const command = [
@@ -363,8 +410,19 @@ export default class FFmpegService {
       "gdigrab",
       "-framerate",
       config.frameRate.toString(),
-      "-i",
-      inputDevice,
+    ];
+
+    // 如果选择了特定屏幕，设置 gdigrab 的捕获参数
+    if (useOffsets) {
+      command.push("-offset_x", x.toString());
+      command.push("-offset_y", y.toString());
+      command.push("-video_size", `${width}x${height}`);
+    }
+
+    command.push("-i", inputDevice);
+    
+    // 添加滤镜和其他编码参数
+    command.push(
       "-vf",
       videoFilter,
       "-c:v",
@@ -378,8 +436,8 @@ export default class FFmpegService {
       "-bufsize",
       `${config.bitRate * 2}k`,
       "-g",
-      (config.frameRate * 2).toString(),
-    ];
+      (config.frameRate * 2).toString()
+    );
 
     // 根据格式添加特定参数
     switch (config.format) {

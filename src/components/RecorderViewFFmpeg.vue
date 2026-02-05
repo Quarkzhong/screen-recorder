@@ -202,7 +202,7 @@
               v-for="source in sources"
               :key="source.id"
               class="source-card"
-              :class="{ active: config.sourceId === source.id }"
+              :class="{ active: config.display_id === source.display_id }"
               @click="selectSource(source.id, source.display_id)"
             >
               <div class="source-thumb">
@@ -519,7 +519,7 @@ const theme = ref<"dark" | "light">("dark");
 const appName = ref("UltraClear Recorder");
 
 const config = reactive<RecorderConfig>({
-  sourceId: "screen:0:0",
+  sourceId: "",
   display_id: "",
   frameRate: 60,
   bitRate: 50000,
@@ -601,6 +601,7 @@ function selectSource(id: string, display_id: string) {
   if (!isRecording.value) {
     config.sourceId = id;
     config.display_id = display_id;
+    console.log("[ config ]-604", config);
   }
 }
 
@@ -681,8 +682,18 @@ async function refreshDiskInfo() {
 
 async function refreshSources() {
   try {
+    const _sources = await window.electronAPI.getSources();
+    // 优先保留带有 "screen" 关键字的源（显示器）
+    const screenSources = _sources.filter(
+      (s: any) =>
+        s.name.toLowerCase().includes("screen") ||
+        s.name.includes("屏幕") ||
+        s.id.startsWith("screen:")
+    );
+    sources.value = screenSources.length > 0 ? screenSources : _sources;
+
     if (
-      !sources.value.find((s) => s.id === config.sourceId) &&
+      (!config.sourceId || !sources.value.find((s) => s.id === config.sourceId)) &&
       sources.value.length > 0
     ) {
       config.sourceId = sources.value[0].id;
@@ -887,29 +898,6 @@ async function saveReplayRecording() {
 
 // ==================== 屏幕截图 ====================
 
-async function takeScreenshot() {
-  try {
-    const result = await window.electronAPI.ffmpegTakeScreenshot(
-      config.sourceId,
-      config.savePath
-    );
-
-    if (result) {
-      ElNotification({
-        title: "截图完成",
-        message: `已保存: ${result.split("/").pop()}`,
-        type: "success",
-        duration: 2000,
-        position: "bottom-right",
-      });
-    } else {
-      ElMessage.error("截图失败");
-    }
-  } catch (error: any) {
-    console.error("Take screenshot failed:", error);
-    ElMessage.error("截图失败: " + error.message);
-  }
-}
 
 // ==================== 更新逻辑 ====================
 function checkForUpdates() {
@@ -917,6 +905,34 @@ function checkForUpdates() {
 }
 
 // ==================== 生命周期 ====================
+
+async function takeScreenshot() {
+  if (isStarting.value) return;
+  isStarting.value = true;
+
+  try {
+    const savePath = config.savePath || (await window.electronAPI.getDefaultPath());
+    // 调用基于 FFmpeg 的后端截图接口，并传递正确的显示器 ID
+    const result = await window.electronAPI.ffmpegTakeScreenshot(config.display_id, savePath);
+
+    if (result) {
+      ElNotification({
+        title: "截图成功",
+        message: `已保存: ${result}`,
+        type: "success",
+        duration: 3000,
+        position: "bottom-right",
+      });
+    } else {
+      throw new Error("FFmpeg 截图返回空值");
+    }
+  } catch (error: any) {
+    console.error("Take screenshot failed:", error);
+    ElMessage.error("截图失败: " + error.message);
+  } finally {
+    isStarting.value = false;
+  }
+}
 
 onMounted(async () => {
   await loadConfig();
@@ -929,8 +945,9 @@ onMounted(async () => {
   monitorTimer = setInterval(refreshMonitorData, 2000);
   const _sources = await window.electronAPI.getSources();
   // 优先保留带有 "screen" 关键字的源（显示器）
+
   sources.value = _sources;
-  config.sourceId = _sources[0].id;
+  selectSource(config.sourceId, config.display_id);
   await refreshSources();
   sourceTimer = setInterval(refreshSources, 5000);
 
