@@ -1,7 +1,7 @@
 {
   "name": "ultraclear-recorder",
   "productName": "UltraClear Recorder",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "轻量级 Windows 桌面录屏工具",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -64,7 +64,7 @@
     "publish": [
       {
         "provider": "generic",
-        "url": "https://screen-recorder-update.vercel.app/"
+        "url": "http://farm.zhinongshi.cn:13000/api/public/dl/JBo-Dbkc/layerManager/3dModel/exe"
       }
     ]
   }

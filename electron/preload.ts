@@ -54,7 +54,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // 获取磁盘空间信息
   getDiskInfo: (path: string): Promise<any> =>
     ipcRenderer.invoke("get-disk-info", path),
-  
+
   // 获取文件大小
   getFileSize: (filePath: string): Promise<number> =>
     ipcRenderer.invoke("get-file-size", filePath),
@@ -124,6 +124,22 @@ contextBridge.exposeInMainWorld("electronAPI", {
   onUpdateProgress: (callback: (percent: number) => void): void => {
     ipcRenderer.on("update-progress", (_, percent) => callback(percent));
   },
+
+  // 发送系统通知
+  sendNotification: (options: {
+    title: string;
+    body: string;
+    hasReply?: boolean;
+    timeoutType?: "default" | "never";
+    onClickChannel?: string;
+    onClickData?: any;
+  }): Promise<boolean> => ipcRenderer.invoke("send-notification", options),
+
+  onNotificationClickOpenFile: (callback: (filePath: string) => void) => {
+    ipcRenderer.on("notification-click-open-file", (_, filePath) =>
+      callback(filePath)
+    );
+  },
 });
 
 // TypeScript 类型声明
@@ -164,6 +180,15 @@ export interface ElectronAPI {
   checkForUpdates: () => void;
   onUpdateMessage: (callback: (message: string) => void) => void;
   onUpdateProgress: (callback: (percent: number) => void) => void;
+  sendNotification: (options: {
+    title: string;
+    body: string;
+    hasReply?: boolean;
+    timeoutType?: "default" | "never";
+    onClickChannel?: string;
+    onClickData?: any;
+  }) => Promise<boolean>;
+  onNotificationClickOpenFile: (callback: (filePath: string) => void) => void;
 
   // FFmpeg相关接口
   ffmpegStartRecording: (config: any) => Promise<boolean>;
@@ -179,7 +204,7 @@ export interface ElectronAPI {
     isRecording: boolean;
     isReplayBuffering: boolean;
   }>;
-  
+
   // 系统信息相关
   getAppName: () => Promise<string>;
   getSystemInfo: () => Promise<any>;

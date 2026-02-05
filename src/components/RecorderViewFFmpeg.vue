@@ -24,11 +24,73 @@
               stroke="currentColor"
               stroke-width="2"
               stroke-linecap="round"
+              stroke-linejoin="round"
             />
           </svg>
         </div>
         <span>{{ appName }}</span>
       </div>
+
+      <!-- 更新通知弹窗 -->
+      <div
+        v-if="updateMessage"
+        class="update-notification"
+        :class="{ show: updateMessage }"
+      >
+        <div class="update-content">
+          <div class="update-icon">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path
+                d="M13 3L12 2M12 2L11 3M12 2V9"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M5 10V14C5 17.3137 7.68629 20 11 20H13C16.3137 20 19 17.3137 19 14V10"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+              />
+              <path
+                d="M8 15H16"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+              />
+            </svg>
+          </div>
+          <div class="update-info">
+            <div class="update-title">软件更新</div>
+            <div class="update-msg">{{ updateMessage }}</div>
+            <div
+              v-if="updateProgress > 0 && updateProgress < 100"
+              class="update-progress"
+            >
+              <div
+                class="progress-bar"
+                :style="{ width: updateProgress + '%' }"
+              ></div>
+              <span class="progress-text"
+                >{{ Math.round(updateProgress) }}%</span
+              >
+            </div>
+          </div>
+          <button class="update-close" @click="updateMessage = ''" title="关闭">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path
+                d="M6 18L18 6M6 6L18 18"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
+
       <div class="window-controls">
         <ThemeToggle v-model="theme"></ThemeToggle>
         <button class="control-btn" @click="checkForUpdates" title="检查更新">
@@ -66,6 +128,7 @@
               stroke="currentColor"
               stroke-width="2"
               stroke-linecap="round"
+              stroke-linejoin="round"
             />
           </svg>
         </button>
@@ -379,7 +442,7 @@
                 >
                   <svg viewBox="0 0 24 24" fill="none">
                     <path
-                      d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5l-2-2z"
+                      d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
                       stroke="currentColor"
                       stroke-width="2"
                       stroke-linecap="round"
@@ -515,19 +578,6 @@
             </div>
           </div>
         </div>
-
-        <!-- 更新状态提示 -->
-        <div class="panel-section update-section" v-if="updateMessage">
-          <h3 class="section-title">软件更新</h3>
-          <div class="update-info">
-            <div class="update-msg">{{ updateMessage }}</div>
-            <el-progress
-              v-if="updateProgress > 0 && updateProgress < 100"
-              :percentage="Math.round(updateProgress)"
-              :stroke-width="4"
-            />
-          </div>
-        </div>
       </div>
     </el-scrollbar>
 
@@ -537,10 +587,10 @@
         <kbd>Ctrl+F12</kbd>
         <span>录制</span>
       </div>
-      <div class="shortcut-tip">
+      <!-- <div class="shortcut-tip">
         <kbd>Ctrl+F11</kbd>
         <span>回溯</span>
-      </div>
+      </div> -->
       <div class="shortcut-tip">
         <kbd>Ctrl+F10</kbd>
         <span>截图</span>
@@ -551,7 +601,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from "vue";
-import { ElMessage, ElNotification } from "element-plus";
+import { ElMessage } from "element-plus";
 import VideoPreview from "./VideoPreview.vue";
 import ThemeToggle from "./ThemeToggle.vue";
 
@@ -950,12 +1000,9 @@ async function startRecording() {
         isReplay: false,
       });
 
-      ElNotification({
+      window.electronAPI.sendNotification({
         title: "录制已开始",
-        message: "按 F12 或点击按钮停止",
-        type: "success",
-        duration: 2000,
-        position: "bottom-right",
+        body: "按 F12 或点击按钮停止",
       });
     } else {
       throw new Error("FFmpeg启动录制失败");
@@ -998,15 +1045,11 @@ async function stopRecording() {
     recordingFilePath.value = "";
 
     if (result) {
-      ElNotification({
+      window.electronAPI.sendNotification({
         title: "录制完成",
-        message: `已保存: ${result.split("/").pop()}`,
-        type: "success",
-        duration: 3000,
-        position: "bottom-right",
-        onClick: () => {
-          window.electronAPI.openPath(result);
-        },
+        body: `已保存: ${result.split("/").pop()}`,
+        onClickChannel: "notification-click-open-file",
+        onClickData: result,
       });
     }
 
@@ -1059,12 +1102,11 @@ async function saveReplayRecording() {
     const result = await window.electronAPI.ffmpegSaveReplay(ffmpegConfig);
 
     if (result) {
-      ElNotification({
+      window.electronAPI.sendNotification({
         title: "回溯录制完成",
-        message: `已保存: ${result.split("/").pop()}`,
-        type: "success",
-        duration: 3000,
-        position: "bottom-right",
+        body: `已保存: ${result.split("/").pop()}`,
+        onClickChannel: "notification-click-open-file",
+        onClickData: result,
       });
     } else {
       ElMessage.warning("没有可用的回溯数据");
@@ -1103,15 +1145,11 @@ async function takeScreenshot() {
     );
 
     if (result) {
-      ElNotification({
+      window.electronAPI.sendNotification({
         title: "截图成功",
-        message: `已保存: ${result}`,
-        type: "success",
-        duration: 3000,
-        position: "bottom-right",
-        onClick: () => {
-          window.electronAPI.openPath(result);
-        },
+        body: `已保存: ${result}`,
+        onClickChannel: "notification-click-open-file",
+        onClickData: result,
       });
     } else {
       throw new Error("FFmpeg 截图返回空值");
@@ -1155,6 +1193,10 @@ onMounted(async () => {
   // 监听更新事件
   window.electronAPI.onUpdateMessage((msg) => {
     updateMessage.value = msg;
+
+    setTimeout(() => {
+      updateMessage.value = "";
+    }, 5000);
     if (msg.includes("出错") || msg.includes("完成")) {
       ElMessage({
         message: msg,
@@ -1166,6 +1208,11 @@ onMounted(async () => {
 
   window.electronAPI.onUpdateProgress((percent) => {
     updateProgress.value = percent;
+  });
+
+  // 监听通知点击事件
+  window.electronAPI.onNotificationClickOpenFile((filePath) => {
+    window.electronAPI.openPath(filePath);
   });
 
   // 启动回溯缓冲
@@ -1186,6 +1233,7 @@ onUnmounted(() => {
   window.electronAPI.removeAllListeners("replay-recording");
   window.electronAPI.removeAllListeners("take-screenshot");
   window.electronAPI.removeAllListeners("theme-changed");
+  window.electronAPI.removeAllListeners("notification-click-open-file");
 });
 </script>
 
@@ -1807,5 +1855,140 @@ $transition-normal: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 :deep(.el-slider__runway),
 :deep(.el-progress-bar__outer) {
   background: var(--bg-tertiary) !important;
+}
+
+/* =========================
+   更新通知
+   ========================= */
+.update-notification {
+  position: fixed;
+  top: 44px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+
+  .update-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 320px;
+    padding: 12px 16px;
+    border-radius: $radius-lg;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.24);
+    backdrop-filter: blur(12px);
+
+    animation: slideInTop 0.3s ease-out;
+  }
+
+  .update-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--bg-tertiary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+
+    svg {
+      width: 18px;
+      height: 18px;
+      color: var(--primary);
+    }
+  }
+
+  .update-info {
+    flex: 1;
+
+    .update-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 2px;
+    }
+
+    .update-msg {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+      line-height: 1.4;
+    }
+
+    .update-progress {
+      position: relative;
+      height: 6px;
+      background: var(--bg-tertiary);
+      border-radius: 3px;
+      overflow: hidden;
+
+      .progress-bar {
+        height: 100%;
+        background: linear-gradient(90deg, var(--primary), #8b5cf6);
+        border-radius: 3px;
+        transition: width 0.3s ease;
+      }
+
+      .progress-text {
+        position: absolute;
+        top: -20px;
+        right: 0;
+        font-size: 11px;
+        color: var(--text-secondary);
+        background: var(--bg-secondary);
+        padding: 2px 6px;
+        border-radius: $radius-sm;
+        border: 1px solid var(--border-color);
+      }
+    }
+  }
+
+  .update-close {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--bg-tertiary);
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: $transition-fast;
+    flex-shrink: 0;
+
+    &:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    svg {
+      width: 14px;
+      height: 14px;
+    }
+  }
+}
+
+@keyframes slideInTop {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideOutTop {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
 }
 </style>

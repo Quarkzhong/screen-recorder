@@ -14,6 +14,7 @@ import {
   desktopCapturer,
   nativeTheme,
   shell,
+  Notification,
 } from "electron";
 import { join } from "path";
 import { writeFile, mkdir } from "fs/promises";
@@ -592,6 +593,45 @@ function setupIPC() {
   ipcMain.on("check-for-updates", () => {
     autoUpdater.checkForUpdates();
   });
+
+  // 发送系统通知
+  ipcMain.handle(
+    "send-notification",
+    async (
+      _,
+      options: {
+        title: string;
+        body: string;
+        hasReply?: boolean;
+        timeoutType?: "default" | "never";
+        onClickChannel?: string;
+        onClickData?: any;
+      }
+    ) => {
+      if (Notification.isSupported()) {
+        const notification = new Notification({
+          title: options.title,
+          body: options.body,
+          hasReply: options.hasReply,
+          timeoutType: options.timeoutType || "default",
+        });
+
+        // 处理点击事件
+        if (options.onClickChannel) {
+          notification.on("click", () => {
+            mainWindow?.webContents.send(
+              options.onClickChannel!,
+              options.onClickData
+            );
+          });
+        }
+
+        notification.show();
+        return true;
+      }
+      return false;
+    }
+  );
 }
 
 // 应用准备就绪
