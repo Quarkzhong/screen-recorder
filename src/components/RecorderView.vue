@@ -417,6 +417,9 @@
           />
           <div class="monitor-detail">
             {{ sysInfo.cpuModel }} ({{ sysInfo.cpuCores }} 核心)
+            <span v-if="sysUsage.cpuCurrentSpeed">
+              @ {{ sysUsage.cpuCurrentSpeed }} MHz
+            </span>
           </div>
         </div>
 
@@ -463,6 +466,32 @@
             stroke-linecap="round"
             status="success"
           />
+        </div>
+
+        <!-- 新增：系统运行时间 -->
+        <div class="monitor-item" v-if="sysUsage.uptime">
+          <div class="monitor-label">
+            <span>系统运行时间</span>
+            <span class="monitor-value">{{ formatUptime(sysUsage.uptime) }}</span>
+          </div>
+        </div>
+
+        <!-- 新增：进程、线程、句柄信息 -->
+        <div class="monitor-item" v-if="sysUsage.processCount">
+          <div class="monitor-label">
+            <span>系统进程</span>
+            <span class="monitor-value">{{ sysUsage.processCount }} 个</span>
+          </div>
+          <div class="monitor-detail-grid">
+            <div class="detail-item">
+              <span class="detail-label">线程:</span>
+              <span class="detail-value">{{ sysUsage.threadCount || 0 }}</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">句柄:</span>
+              <span class="detail-value">{{ formatNumber(sysUsage.handleCount || 0) }}</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -607,6 +636,30 @@ function formatDuration(seconds: number): string {
 function formatBitrate(kbps: number): string {
   return kbps >= 1000 ? `${(kbps / 1000).toFixed(0)} Mbps` : `${kbps} Kbps`;
 }
+
+function formatUptime(seconds: number): string {
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  
+  if (days > 0) {
+    return `${days}天 ${hours}小时 ${minutes}分钟`;
+  } else if (hours > 0) {
+    return `${hours}小时 ${minutes}分钟`;
+  } else {
+    return `${minutes}分钟`;
+  }
+}
+
+function formatNumber(num: number): string {
+  if (num >= 1000000) {
+    return (num / 1000000).toFixed(1) + 'M';
+  } else if (num >= 1000) {
+    return (num / 1000).toFixed(1) + 'K';
+  }
+  return num.toString();
+}
+
 
 function selectSource(id: string) {
   if (!isRecording.value) {
@@ -1708,6 +1761,36 @@ onUnmounted(() => {
   color: var(--text-muted);
   padding: 0 4px;
 }
+
+.monitor-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 8px 4px 0;
+}
+
+.detail-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  background-color: var(--bg-tertiary);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.detail-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.detail-value {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
 
 /* 页脚快捷键 */
 .shortcuts-footer {

@@ -257,6 +257,9 @@
               formatBitrate(config.bitRate)
             }}</span>
             <span class="size-estimate">≈ {{ estimatedSizePerMin }}/min</span>
+            <span v-if="isRecording && currentFileSize > 0" class="current-size">
+              当前: {{ currentFileSizeFormatted }}
+            </span>
           </label>
           <el-slider
             v-model="config.bitRate"
@@ -417,6 +420,9 @@
           />
           <div class="monitor-detail">
             {{ sysInfo.cpuModel }} ({{ sysInfo.cpuCores }} 核心)
+            <span v-if="sysUsage.cpuCurrentSpeed">
+              @ {{ sysUsage.cpuCurrentSpeed }} MHz
+            </span>
           </div>
         </div>
 
@@ -463,6 +469,32 @@
             stroke-linecap="round"
             status="success"
           />
+        </div>
+
+        <!-- 新增：系统运行时间 -->
+        <div class="monitor-item" v-if="sysUsage.uptime">
+          <div class="monitor-label">
+            <span>系统运行时间</span>
+            <span class="monitor-value">{{ formatUptime(sysUsage.uptime) }}</span>
+          </div>
+        </div>
+
+        <!-- 新增：进程、线程、句柄信息 -->
+        <div class="monitor-item" v-if="sysUsage.processCount">
+          <div class="monitor-label">
+            <span>系统进程</span>
+            <span class="monitor-value">{{ sysUsage.processCount }} 个</span>
+          </div>
+          <div class="monitor-detail-grid">
+            <div class="detail-item">
+              <span class="detail-label">线程:</span>
+              <span class="detail-value">{{ sysUsage.threadCount || 0 }}</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">句柄:</span>
+              <span class="detail-value">{{ formatNumber(sysUsage.handleCount || 0) }}</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -537,10 +569,13 @@ const isReplayRecording = ref(false);
 const isStarting = ref(false);
 const recordingDuration = ref(0); // 秒
 const recordingStartTime = ref<number>(0);
+const currentFileSize = ref<number>(0); // 当前录像文件大小（字节）
+const recordingFilePath = ref<string>(""); // 当前录像文件路径
 
 let durationTimer: ReturnType<typeof setInterval> | null = null;
 let monitorTimer: ReturnType<typeof setInterval> | null = null;
 let sourceTimer: ReturnType<typeof setInterval> | null = null;
+let fileSizeTimer: ReturnType<typeof setInterval> | null = null;
 
 // 系统监控
 const sysInfo = ref<any>({ cpuModel: "", cpuCores: 0, totalMem: 0 });
@@ -570,15 +605,33 @@ const statusText = computed(() => {
   return "准备就绪";
 });
 
-// 估算每分钟文件大小
+// 估算每分钟文件大小（修正后的公式）
 const estimatedSizePerMin = computed(() => {
-  const mbPerMin = ((config.bitRate / 8) * 60) / 1024;
-  return mbPerMin.toFixed(1) + " MB";
+  // bitRate 单位是 Kbps
+  // 转换为字节/秒：bitRate * 1000 / 8
+  // 每分钟：* 60
+  // 转换为 MB：/ (1024 * 1024)
+  const bytesPerSecond = (config.bitRate * 1000) / 8;
+  const bytesPerMinute = bytesPerSecond * 60;
+  const mbPerMinute = bytesPerMinute / (1024 * 1024);
+  return mbPerMinute.toFixed(1) + " MB";
 });
 
 const estimatedReplaySizePerMin = computed(() => {
-  const mbPerMin = ((config.replayBitRate / 8) * 60) / 1024;
-  return mbPerMin.toFixed(1) + " MB";
+  const bytesPerSecond = (config.replayBitRate * 1000) / 8;
+  const bytesPerMinute = bytesPerSecond * 60;
+  const mbPerMinute = bytesPerMinute / (1024 * 1024);
+  return mbPerMinute.toFixed(1) + " MB";
+});
+
+// 当前录像文件大小（格式化）
+const currentFileSizeFormatted = computed(() => {
+  if (!isRecording.value || currentFileSize.value === 0) return "0 MB";
+  const mb = currentFileSize.value / (1024 * 1024);
+  if (mb >= 1024) {
+    return (mb / 1024).toFixed(2) + " GB";
+  }
+  return mb.toFixed(2) + " MB";
 });
 
 // ==================== 工具函数 ====================
@@ -596,6 +649,30 @@ function formatDuration(seconds: number): string {
 function formatBitrate(kbps: number): string {
   return kbps >= 1000 ? `${(kbps / 1000).toFixed(0)} Mbps` : `${kbps} Kbps`;
 }
+
+function formatUptime(seconds: number): string {
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  
+  if (days > 0) {
+    return `${days}天 ${hours}小时 ${minutes}分钟`;
+  } else if (hours > 0) {
+    return `${hours}小时 ${minutes}分钟`;
+  } else {
+    return `${minutes}分钟`;
+  }
+}
+
+function formatNumber(num: number): string {
+  if (num >= 1000000) {
+    return (num / 1000000).toFixed(1) + 'M';
+  } else if (num >= 1000) {
+    return (num / 1000).toFixed(1) + 'K';
+  }
+  return num.toString();
+}
+
 
 function selectSource(id: string, display_id: string) {
   if (!isRecording.value) {
@@ -769,9 +846,28 @@ async function startRecording() {
       isRecording.value = true;
       recordingStartTime.value = Date.now();
       recordingDuration.value = 0;
+      currentFileSize.value = 0;
+      
+      // 生成文件路径（与后端逻辑一致）
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const fileName = `recording_${timestamp}.${config.format}`;
+      recordingFilePath.value = `${config.savePath}\\${fileName}`;
+      
       durationTimer = setInterval(() => {
         recordingDuration.value++;
       }, 1000);
+      
+      // 启动文件大小监控（每2秒更新一次）
+      fileSizeTimer = setInterval(async () => {
+        if (recordingFilePath.value) {
+          try {
+            const size = await window.electronAPI.getFileSize(recordingFilePath.value);
+            currentFileSize.value = size;
+          } catch (error) {
+            console.error('获取文件大小失败:', error);
+          }
+        }
+      }, 2000);
 
       window.electronAPI.updateRecordingStatus({
         isRecording: true,
@@ -806,6 +902,11 @@ async function stopRecording() {
       clearInterval(durationTimer);
       durationTimer = null;
     }
+    
+    if (fileSizeTimer) {
+      clearInterval(fileSizeTimer);
+      fileSizeTimer = null;
+    }
 
     // 使用FFmpeg停止录制
     const result = await window.electronAPI.ffmpegStopRecording();
@@ -815,6 +916,10 @@ async function stopRecording() {
       isRecording: false,
       isReplay: false,
     });
+    
+    // 重置文件大小和路径
+    currentFileSize.value = 0;
+    recordingFilePath.value = "";
 
     if (result) {
       ElNotification({
@@ -1322,6 +1427,28 @@ onUnmounted(() => {
   border-radius: 6px;
 }
 
+.current-size {
+  font-size: 11px;
+  color: var(--success);
+  margin-left: 8px;
+  padding: 2px 8px;
+  background-color: rgba(76, 175, 80, 0.1);
+  border: 1px solid var(--success);
+  border-radius: 6px;
+  font-weight: 600;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+
 /* 屏幕选择器 */
 .source-selector {
   display: grid;
@@ -1495,6 +1622,35 @@ onUnmounted(() => {
   font-size: 11px;
   color: var(--text-muted);
   padding: 0 4px;
+}
+
+.monitor-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 8px 4px 0;
+}
+
+.detail-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  background-color: var(--bg-tertiary);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.detail-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.detail-value {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
 }
 
 /* 页脚快捷键 */

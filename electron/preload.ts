@@ -54,6 +54,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // 获取磁盘空间信息
   getDiskInfo: (path: string): Promise<any> =>
     ipcRenderer.invoke("get-disk-info", path),
+  
+  // 获取文件大小
+  getFileSize: (filePath: string): Promise<number> =>
+    ipcRenderer.invoke("get-file-size", filePath),
 
   // 获取默认保存路径
   getDefaultPath: (): Promise<string> => ipcRenderer.invoke("get-default-path"),
@@ -175,6 +179,13 @@ export interface ElectronAPI {
     isRecording: boolean;
     isReplayBuffering: boolean;
   }>;
+  
+  // 系统信息相关
+  getAppName: () => Promise<string>;
+  getSystemInfo: () => Promise<any>;
+  getSystemUsage: () => Promise<any>;
+  getDiskInfo: (path: string) => Promise<any>;
+  getFileSize: (filePath: string) => Promise<number>;
 }
 
 declare global {

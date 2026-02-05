@@ -17,13 +17,75 @@ import {
 } from "electron";
 import { join } from "path";
 import { writeFile, mkdir } from "fs/promises";
-import { existsSync } from "fs";
+import { existsSync, statSync } from "fs";
 import Store from "electron-store";
 import os from "os";
 import checkDiskSpace from "check-disk-space";
 import osUtils from "os-utils";
 import { autoUpdater } from "electron-updater";
 import FFmpegService from "./services/ffmpegService";
+import { exec } from "child_process";
+import { promisify } from "util";
+
+const execPromise = promisify(exec);
+
+// Windows 系统详细信息获取函数
+async function getWindowsSystemDetails() {
+  if (process.platform !== "win32") {
+    return {
+      processCount: 0,
+      threadCount: 0,
+      handleCount: 0,
+    };
+  }
+
+  try {
+    // 使用简单的 PowerShell 命令分别获取信息
+    const { stdout } = await execPromise(
+      'powershell -Command "$procs = Get-Process; $procs.Count; ($procs | ForEach-Object { $_.Threads.Count } | Measure-Object -Sum).Sum; ($procs | ForEach-Object { $_.HandleCount } | Measure-Object -Sum).Sum"',
+      { timeout: 5000 }
+    );
+
+    const lines = stdout.trim().split('\n').map(line => parseInt(line.trim()));
+    
+    return {
+      processCount: lines[0] || 0,
+      threadCount: lines[1] || 0,
+      handleCount: lines[2] || 0,
+    };
+  } catch (error) {
+    console.error("Failed to get Windows system details:", error);
+    return {
+      processCount: 0,
+      threadCount: 0,
+      handleCount: 0,
+    };
+  }
+}
+
+// 获取 CPU 当前频率（Windows）
+async function getCPUCurrentSpeed() {
+  if (process.platform !== "win32") {
+    return os.cpus()[0]?.speed || 0;
+  }
+
+  try {
+    const { stdout } = await execPromise(
+      "wmic cpu get CurrentClockSpeed",
+      { timeout: 3000 }
+    );
+    const lines = stdout.trim().split("\n");
+    if (lines.length > 1) {
+      const speed = parseInt(lines[1].trim());
+      return isNaN(speed) ? os.cpus()[0]?.speed || 0 : speed;
+    }
+  } catch (error) {
+    console.error("Failed to get CPU current speed:", error);
+  }
+  
+  return os.cpus()[0]?.speed || 0;
+}
+
 
 // 配置存储
 const APP_NAME = "UltraClear Recorder";
@@ -370,21 +432,49 @@ function setupIPC() {
     return {
       cpuModel: cpus[0].model,
       cpuCores: cpus.length,
+      cpuSpeed: cpus[0].speed, // MHz
       totalMem: os.totalmem(),
       osPlatform: os.platform(),
       osRelease: os.release(),
       arch: os.arch(),
+      hostname: os.hostname(),
+      uptime: os.uptime(), // 系统运行时间（秒）
     };
   });
 
   // 获取实时系统资源使用率
   ipcMain.handle("get-system-usage", async () => {
-    return new Promise((resolve) => {
-      osUtils.cpuUsage((v: number) => {
+    return new Promise(async (resolve) => {
+      // 并行获取各种系统信息
+      const [windowsDetails, cpuCurrentSpeed] = await Promise.all([
+        getWindowsSystemDetails(),
+        getCPUCurrentSpeed(),
+      ]);
+
+      osUtils.cpuUsage((cpuUsage: number) => {
+        const freeMem = os.freemem();
+        const totalMem = os.totalmem();
+        const usedMem = totalMem - freeMem;
+        const uptime = os.uptime();
+
         resolve({
-          cpuUsage: v,
-          freeMem: os.freemem(),
-          totalMem: os.totalmem(),
+          // CPU 信息
+          cpuUsage,
+          cpuCurrentSpeed, // MHz
+          
+          // 内存信息
+          freeMem,
+          totalMem,
+          usedMem,
+          memUsagePercent: (usedMem / totalMem) * 100,
+          
+          // 系统信息
+          uptime, // 系统运行时间（秒）
+          
+          // Windows 特定信息
+          processCount: windowsDetails.processCount,
+          threadCount: windowsDetails.threadCount,
+          handleCount: windowsDetails.handleCount,
         });
       });
     });
@@ -405,6 +495,21 @@ function setupIPC() {
       return null;
     }
   });
+
+  // 获取文件大小
+  ipcMain.handle("get-file-size", async (_, filePath: string) => {
+    try {
+      if (!filePath || !existsSync(filePath)) {
+        return 0;
+      }
+      const stats = statSync(filePath);
+      return stats.size;
+    } catch (error) {
+      console.error("Failed to get file size:", error);
+      return 0;
+    }
+  });
+
 
   // FFmpeg录制控制
   ipcMain.handle("ffmpeg-start-recording", async (_, config) => {
