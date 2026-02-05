@@ -46,8 +46,11 @@ async function getWindowsSystemDetails() {
       { timeout: 5000 }
     );
 
-    const lines = stdout.trim().split('\n').map(line => parseInt(line.trim()));
-    
+    const lines = stdout
+      .trim()
+      .split("\n")
+      .map((line) => parseInt(line.trim()));
+
     return {
       processCount: lines[0] || 0,
       threadCount: lines[1] || 0,
@@ -70,10 +73,9 @@ async function getCPUCurrentSpeed() {
   }
 
   try {
-    const { stdout } = await execPromise(
-      "wmic cpu get CurrentClockSpeed",
-      { timeout: 3000 }
-    );
+    const { stdout } = await execPromise("wmic cpu get CurrentClockSpeed", {
+      timeout: 3000,
+    });
     const lines = stdout.trim().split("\n");
     if (lines.length > 1) {
       const speed = parseInt(lines[1].trim());
@@ -82,10 +84,9 @@ async function getCPUCurrentSpeed() {
   } catch (error) {
     console.error("Failed to get CPU current speed:", error);
   }
-  
+
   return os.cpus()[0]?.speed || 0;
 }
-
 
 // 配置存储
 const APP_NAME = "UltraClear Recorder";
@@ -112,11 +113,35 @@ let isReplayRecording = false;
 // 初始化FFmpeg服务
 const ffmpegService = new FFmpegService();
 
+// 单实例锁
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  // 已经有实例在运行，直接退出当前进程
+  app.quit();
+} else {
+  // 当尝试启动第二个实例时触发
+  app.on("second-instance", () => {
+    if (mainWindow) {
+      // 如果窗口被最小化，恢复
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+      }
+
+      // 如果窗口被隐藏（托盘）
+      mainWindow.show();
+
+      // 把窗口拉到最前
+      mainWindow.focus();
+    }
+  });
+}
+
 // 创建主窗口
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 480,
-    height: 620,
+    width: 520,
+    height: 800,
     title: APP_NAME,
     resizable: true,
     maximizable: false,
@@ -324,8 +349,9 @@ function setupIPC() {
 
   // 打开文件/路径
   ipcMain.handle("open-path", async (_, path: string) => {
-    const error = await shell.openPath(path);
-    return error; // 返回空字符串表示成功
+    // const error = await shell.openPath(path);
+    // return error; // 返回空字符串表示成功
+    shell.showItemInFolder(path);
   });
 
   // 选择保存目录
@@ -461,16 +487,16 @@ function setupIPC() {
           // CPU 信息
           cpuUsage,
           cpuCurrentSpeed, // MHz
-          
+
           // 内存信息
           freeMem,
           totalMem,
           usedMem,
           memUsagePercent: (usedMem / totalMem) * 100,
-          
+
           // 系统信息
           uptime, // 系统运行时间（秒）
-          
+
           // Windows 特定信息
           processCount: windowsDetails.processCount,
           threadCount: windowsDetails.threadCount,
@@ -509,7 +535,6 @@ function setupIPC() {
       return 0;
     }
   });
-
 
   // FFmpeg录制控制
   ipcMain.handle("ffmpeg-start-recording", async (_, config) => {

@@ -12,6 +12,7 @@
     "electron:build": "vite build && electron-builder"
   },
   "dependencies": {
+    "@vueuse/core": "^14.2.0",
     "build": "^0.1.4",
     "check-disk-space": "^3.4.0",
     "electron-store": "^8.1.0",
@@ -21,6 +22,7 @@
     "fix-webm-duration": "^1.0.6",
     "os-utils": "^0.0.14",
     "pinia": "^2.1.7",
+    "scss": "^0.2.4",
     "vue": "^3.4.15"
   },
   "devDependencies": {
@@ -35,6 +37,7 @@
     "electron-builder": "^24.9.1",
     "fluent-ffmpeg": "^2.1.3",
     "postcss": "^8.4.35",
+    "sass-embedded": "^1.97.3",
     "typescript": "^5.3.3",
     "vite": "^7.3.1",
     "vite-plugin-electron": "^0.28.0",

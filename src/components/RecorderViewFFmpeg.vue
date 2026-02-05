@@ -30,36 +30,7 @@
         <span>{{ appName }}</span>
       </div>
       <div class="window-controls">
-        <button
-          class="control-btn theme-toggle"
-          @click="toggleTheme"
-          :title="theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'"
-        >
-          <svg v-if="theme === 'dark'" viewBox="0 0 24 24" fill="none">
-            <circle
-              cx="12"
-              cy="12"
-              r="5"
-              stroke="currentColor"
-              stroke-width="2"
-            />
-            <path
-              d="M12 2v2M12 20v2M4 12H2M22 12h-2M6.34 6.34L4.93 4.93M19.07 4.93l-1.41 1.41M6.34 17.66l-1.41 1.41M19.07 19.07l-1.41-1.41"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-            />
-          </svg>
-          <svg v-else viewBox="0 0 24 24" fill="none">
-            <path
-              d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-        </button>
+        <ThemeToggle v-model="theme"></ThemeToggle>
         <button class="control-btn" @click="checkForUpdates" title="检查更新">
           <svg viewBox="0 0 24 24" fill="none">
             <path
@@ -171,346 +142,394 @@
     </div>
 
     <!-- 配置表单 -->
-    <div class="settings-panel custom-scrollbar">
-      <div class="panel-section">
-        <h3 class="section-title">录制设置</h3>
-
-        <!-- 屏幕选择 -->
-        <div class="setting-item">
-          <label class="setting-label">
-            <svg class="icon-small" viewBox="0 0 24 24" fill="none">
-              <rect
-                x="2"
-                y="3"
-                width="20"
-                height="14"
-                rx="2"
-                stroke="currentColor"
-                stroke-width="2"
-              />
-              <path
-                d="M8 21h8M12 17v4"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-              />
-            </svg>
-            选择录制屏幕
-          </label>
-          <div class="source-selector" v-if="sources.length > 0">
-            <div
-              v-for="source in sources"
-              :key="source.id"
-              class="source-card"
-              :class="{ active: config.display_id === source.display_id }"
-              @click="selectSource(source.id, source.display_id)"
-            >
-              <div class="source-thumb">
-                <VideoPreview
-                  :source-id="source.id"
-                  :active="config.sourceId === source.id"
-                />
-              </div>
-              <div class="source-name">{{ source.name }}</div>
-            </div>
-          </div>
-          <div v-else class="source-loading">正在获取屏幕信息...</div>
-        </div>
-
-        <!-- 帧率与码率 -->
-        <div class="setting-item">
-          <label class="setting-label">
-            <svg class="icon-small" viewBox="0 0 24 24" fill="none">
-              <path
-                d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-              />
-            </svg>
-            帧率
-            <span class="badge primary">{{ config.frameRate }} fps</span>
-          </label>
-          <el-slider
-            v-model="config.frameRate"
-            :min="15"
-            :max="60"
-            :step="1"
-            :marks="{ 15: '15', 30: '30', 45: '45', 60: '60' }"
-            :disabled="isRecording"
-          />
-        </div>
-
-        <div class="setting-item">
-          <label class="setting-label">
-            <svg class="icon-small" viewBox="0 0 24 24" fill="none">
-              <path
-                d="M22 12h-4l-3 9L9 3l-3 9H2"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
-            录制码率
-            <span class="badge primary">{{
-              formatBitrate(config.bitRate)
-            }}</span>
-            <span class="size-estimate">≈ {{ estimatedSizePerMin }}/min</span>
-            <span v-if="isRecording && currentFileSize > 0" class="current-size">
-              当前: {{ currentFileSizeFormatted }}
-            </span>
-          </label>
-          <el-slider
-            v-model="config.bitRate"
-            :min="5000"
-            :max="120000"
-            :step="5000"
-            :disabled="isRecording"
-            :marks="{
-              5000: '5M',
-              50000: '50M',
-              100000: '100M',
-              120000: '120M',
-            }"
-          />
-        </div>
-
-        <!-- 回溯设置 -->
-        <div class="sub-section">
-          <h4 class="sub-title">回溯设置 (降低画质以减少卡顿)</h4>
+    <el-scrollbar>
+      <div class="settings-panel custom-scrollbar">
+        <div class="panel-section">
+          <h3 class="section-title">录制设置</h3>
           <div class="setting-item">
             <label class="setting-label">
               <svg class="icon-small" viewBox="0 0 24 24" fill="none">
                 <path
-                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                  d="M4 4h16v16H4z"
+                  stroke="currentColor"
+                  stroke-width="2"
+                />
+              </svg>
+              录制模式
+            </label>
+
+            <div class="record-mode-grid">
+              <div
+                v-for="mode in RECORD_MODE_OPTIONS"
+                :key="mode.key"
+                class="record-mode-card"
+                :class="{ active: config.preset === mode.key }"
+                @click="!isRecording && (config.preset = mode.key as any)"
+              >
+                <div class="mode-header">
+                  <span class="mode-icon">{{ mode.icon }}</span>
+                  <span class="mode-title">{{ mode.title }}</span>
+                </div>
+
+                <div class="mode-desc">{{ mode.desc }}</div>
+
+                <div class="mode-meta">
+                  <template v-if="mode.key !== 'custom'">
+                    {{ mode.fps }} FPS · {{ formatBitrate(mode.bitrate) }}
+                  </template>
+                  <template v-else>自由设置</template>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 屏幕选择 -->
+          <div class="setting-item">
+            <label class="setting-label">
+              <svg class="icon-small" viewBox="0 0 24 24" fill="none">
+                <rect
+                  x="2"
+                  y="3"
+                  width="20"
+                  height="14"
+                  rx="2"
+                  stroke="currentColor"
+                  stroke-width="2"
+                />
+                <path
+                  d="M8 21h8M12 17v4"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                />
+              </svg>
+              选择录制屏幕
+            </label>
+            <div class="source-selector" v-if="sources.length > 0">
+              <div
+                v-for="source in sources"
+                :key="source.id"
+                class="source-card"
+                :class="{ active: config.display_id === source.display_id }"
+                @click="selectSource(source.id, source.display_id)"
+              >
+                <div class="source-thumb">
+                  <VideoPreview
+                    :source-id="source.id"
+                    :active="config.sourceId === source.id"
+                  />
+                </div>
+                <div class="source-name">{{ source.name }}</div>
+              </div>
+            </div>
+            <div v-else class="source-loading">正在获取屏幕信息...</div>
+          </div>
+
+          <!-- 帧率与码率 -->
+          <div class="setting-item">
+            <label class="setting-label">
+              <svg class="icon-small" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                />
+              </svg>
+              帧率
+              <span class="badge primary">{{ config.frameRate }} fps</span>
+            </label>
+            <el-slider
+              v-model="config.frameRate"
+              :min="15"
+              :max="60"
+              :step="1"
+              :marks="{ 15: '15', 30: '30', 45: '45', 60: '60' }"
+              :disabled="isRecording || config.preset !== 'custom'"
+            />
+          </div>
+
+          <div class="setting-item">
+            <label class="setting-label">
+              <svg class="icon-small" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M22 12h-4l-3 9L9 3l-3 9H2"
                   stroke="currentColor"
                   stroke-width="2"
                   stroke-linecap="round"
                   stroke-linejoin="round"
                 />
               </svg>
-              回溯码率
+              录制码率
               <span class="badge primary">{{
-                formatBitrate(config.replayBitRate)
+                formatBitrate(config.bitRate)
               }}</span>
-              <span class="size-estimate"
-                >≈ {{ estimatedReplaySizePerMin }}/min</span
+              <span class="size-estimate">≈ {{ estimatedSizePerMin }}/min</span>
+              <span
+                v-if="isRecording && currentFileSize > 0"
+                class="current-size"
               >
+                当前: {{ currentFileSizeFormatted }}
+              </span>
             </label>
             <el-slider
-              v-model="config.replayBitRate"
-              :min="1000"
-              :max="50000"
-              :step="1000"
-              :disabled="isRecording"
-              :marks="{ 1000: '1M', 25000: '25M', 50000: '50M' }"
+              v-model="config.bitRate"
+              :min="100"
+              :max="120000"
+              :step="100"
+              :disabled="isRecording || config.preset !== 'custom'"
+              :marks="{
+                5000: '5M',
+                50000: '50M',
+                100000: '100M',
+                120000: '120M',
+              }"
             />
           </div>
-        </div>
 
-        <!-- 保存设置 -->
-        <div class="setting-item">
-          <label class="setting-label">
-            <svg class="icon-small" viewBox="0 0 24 24" fill="none">
-              <path
-                d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
-                fill="currentColor"
-              />
-              <path
-                d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                stroke="currentColor"
-                stroke-width="2"
-              />
-            </svg>
-            编码格式
-          </label>
-          <div class="format-group">
-            <button
-              v-for="fmt in ['mp4', 'mkv', 'webm']"
-              :key="fmt"
-              class="format-btn"
-              :class="{ active: config.format === fmt }"
-              :disabled="isRecording"
-              @click="config.format = fmt as 'mp4' | 'mkv' | 'webm'"
-            >
-              {{ fmt.toUpperCase() }}
-            </button>
-          </div>
-        </div>
-
-        <div class="setting-item">
-          <label class="setting-label">
-            <svg class="icon-small" viewBox="0 0 24 24" fill="none">
-              <path
-                d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
-            保存路径
-          </label>
-          <div class="path-input-group">
-            <input
-              type="text"
-              v-model="config.savePath"
-              :disabled="isRecording"
-              readonly
-            />
-            <div class="path-actions">
-              <button
-                class="icon-btn"
-                @click="openSavePath"
-                :disabled="isRecording"
-                title="打开文件夹"
-              >
-                <svg viewBox="0 0 24 24" fill="none">
+          <!-- TODO:回溯设置 功能开发有问题 ，先隐藏后续有空再开发 -->
+          <div class="sub-section" v-if="false">
+            <h4 class="sub-title">回溯设置 (降低画质以减少卡顿)</h4>
+            <div class="setting-item">
+              <label class="setting-label">
+                <svg class="icon-small" viewBox="0 0 24 24" fill="none">
                   <path
-                    d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5l-2-2z"
+                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
                     stroke="currentColor"
                     stroke-width="2"
                     stroke-linecap="round"
                     stroke-linejoin="round"
                   />
                 </svg>
-              </button>
-              <button
-                class="icon-btn"
-                @click="selectSavePath"
+                回溯码率
+                <span class="badge primary">{{
+                  formatBitrate(config.replayBitRate)
+                }}</span>
+                <span class="size-estimate"
+                  >≈ {{ estimatedReplaySizePerMin }}/min</span
+                >
+              </label>
+              <el-slider
+                v-model="config.replayBitRate"
+                :min="1000"
+                :max="50000"
+                :step="1000"
                 :disabled="isRecording"
-                title="更改路径"
+                :marks="{ 1000: '1M', 25000: '25M', 50000: '50M' }"
+              />
+            </div>
+          </div>
+
+          <!-- 保存设置 -->
+          <div class="setting-item">
+            <label class="setting-label">
+              <svg class="icon-small" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
+                  fill="currentColor"
+                />
+                <path
+                  d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  stroke="currentColor"
+                  stroke-width="2"
+                />
+              </svg>
+              编码格式
+            </label>
+            <div class="format-group">
+              <button
+                v-for="fmt in ['mp4', 'mkv', 'webm']"
+                :key="fmt"
+                class="format-btn"
+                :class="{ active: config.format === fmt }"
+                :disabled="isRecording"
+                @click="config.format = fmt as 'mp4' | 'mkv' | 'webm'"
               >
-                <svg viewBox="0 0 24 24" fill="none">
-                  <path
-                    d="M5 12h14M12 5l7 7-7 7"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  />
-                </svg>
+                {{ fmt.toUpperCase() }}
               </button>
             </div>
           </div>
-        </div>
-      </div>
 
-      <!-- 系统状态监控 -->
-      <div class="panel-section monitor-section">
-        <h3 class="section-title">系统资源监控</h3>
-
-        <div class="monitor-item">
-          <div class="monitor-label">
-            <span>CPU 使用率</span>
-            <span class="monitor-value"
-              >{{ (sysUsage.cpuUsage * 100).toFixed(1) }}%</span
-            >
-          </div>
-          <el-progress
-            :percentage="
-              isNaN(sysUsage.cpuUsage)
-                ? 0
-                : Math.min(100, Math.round(sysUsage.cpuUsage * 100))
-            "
-            :show-text="false"
-            :stroke-width="4"
-            stroke-linecap="round"
-          />
-          <div class="monitor-detail">
-            {{ sysInfo.cpuModel }} ({{ sysInfo.cpuCores }} 核心)
-            <span v-if="sysUsage.cpuCurrentSpeed">
-              @ {{ sysUsage.cpuCurrentSpeed }} MHz
-            </span>
-          </div>
-        </div>
-
-        <div class="monitor-item">
-          <div class="monitor-label">
-            <span>内存占用</span>
-            <span class="monitor-value"
-              >{{ usedMemGB.toFixed(1) }}G / {{ totalMemGB.toFixed(1) }}G</span
-            >
-          </div>
-          <el-progress
-            :percentage="
-              !totalMemGB || isNaN(usedMemGB / totalMemGB)
-                ? 0
-                : Math.round((usedMemGB / totalMemGB) * 100)
-            "
-            :show-text="false"
-            :stroke-width="4"
-            stroke-linecap="round"
-            status="warning"
-          />
-        </div>
-
-        <div class="monitor-item" v-if="diskInfo">
-          <div class="monitor-label">
-            <span>磁盘空间 ({{ diskRoot }})</span>
-            <span class="monitor-value">
-              剩余 {{ (diskInfo.free / 1024 / 1024 / 1024).toFixed(1) }}G / 总
-              {{ (diskInfo.size / 1024 / 1024 / 1024).toFixed(0) }}G
-            </span>
-          </div>
-          <el-progress
-            :percentage="
-              !diskInfo ||
-              !diskInfo.size ||
-              isNaN((diskInfo.size - diskInfo.free) / diskInfo.size)
-                ? 0
-                : Math.round(
-                    ((diskInfo.size - diskInfo.free) / diskInfo.size) * 100
-                  )
-            "
-            :show-text="false"
-            :stroke-width="4"
-            stroke-linecap="round"
-            status="success"
-          />
-        </div>
-
-        <!-- 新增：系统运行时间 -->
-        <div class="monitor-item" v-if="sysUsage.uptime">
-          <div class="monitor-label">
-            <span>系统运行时间</span>
-            <span class="monitor-value">{{ formatUptime(sysUsage.uptime) }}</span>
-          </div>
-        </div>
-
-        <!-- 新增：进程、线程、句柄信息 -->
-        <div class="monitor-item" v-if="sysUsage.processCount">
-          <div class="monitor-label">
-            <span>系统进程</span>
-            <span class="monitor-value">{{ sysUsage.processCount }} 个</span>
-          </div>
-          <div class="monitor-detail-grid">
-            <div class="detail-item">
-              <span class="detail-label">线程:</span>
-              <span class="detail-value">{{ sysUsage.threadCount || 0 }}</span>
-            </div>
-            <div class="detail-item">
-              <span class="detail-label">句柄:</span>
-              <span class="detail-value">{{ formatNumber(sysUsage.handleCount || 0) }}</span>
+          <div class="setting-item">
+            <label class="setting-label">
+              <svg class="icon-small" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              保存路径
+            </label>
+            <div class="path-input-group">
+              <input
+                type="text"
+                v-model="config.savePath"
+                :disabled="isRecording"
+                readonly
+              />
+              <div class="path-actions">
+                <button
+                  class="icon-btn"
+                  @click="openSavePath"
+                  :disabled="isRecording"
+                  title="打开文件夹"
+                >
+                  <svg viewBox="0 0 24 24" fill="none">
+                    <path
+                      d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5l-2-2z"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </button>
+                <button
+                  class="icon-btn"
+                  @click="selectSavePath"
+                  :disabled="isRecording"
+                  title="更改路径"
+                >
+                  <svg viewBox="0 0 24 24" fill="none">
+                    <path
+                      d="M5 12h14M12 5l7 7-7 7"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- 更新状态提示 -->
-      <div class="panel-section update-section" v-if="updateMessage">
-        <h3 class="section-title">软件更新</h3>
-        <div class="update-info">
-          <div class="update-msg">{{ updateMessage }}</div>
-          <el-progress
-            v-if="updateProgress > 0 && updateProgress < 100"
-            :percentage="Math.round(updateProgress)"
-            :stroke-width="4"
-          />
+        <!-- 系统状态监控 -->
+        <div class="panel-section monitor-section">
+          <h3 class="section-title">系统资源监控</h3>
+
+          <div class="monitor-item">
+            <div class="monitor-label">
+              <span>CPU 使用率</span>
+              <span class="monitor-value"
+                >{{ (sysUsage.cpuUsage * 100).toFixed(1) }}%</span
+              >
+            </div>
+            <el-progress
+              :percentage="
+                isNaN(sysUsage.cpuUsage)
+                  ? 0
+                  : Math.min(100, Math.round(sysUsage.cpuUsage * 100))
+              "
+              :show-text="false"
+              :stroke-width="4"
+              stroke-linecap="round"
+            />
+            <div class="monitor-detail">
+              {{ sysInfo.cpuModel }} ({{ sysInfo.cpuCores }} 核心)
+              <span v-if="sysUsage.cpuCurrentSpeed">
+                @ {{ sysUsage.cpuCurrentSpeed }} MHz
+              </span>
+            </div>
+          </div>
+
+          <div class="monitor-item">
+            <div class="monitor-label">
+              <span>内存占用</span>
+              <span class="monitor-value"
+                >{{ usedMemGB.toFixed(1) }}G /
+                {{ totalMemGB.toFixed(1) }}G</span
+              >
+            </div>
+            <el-progress
+              :percentage="
+                !totalMemGB || isNaN(usedMemGB / totalMemGB)
+                  ? 0
+                  : Math.round((usedMemGB / totalMemGB) * 100)
+              "
+              :show-text="false"
+              :stroke-width="4"
+              stroke-linecap="round"
+              status="warning"
+            />
+          </div>
+
+          <div class="monitor-item" v-if="diskInfo">
+            <div class="monitor-label">
+              <span>磁盘空间 ({{ diskRoot }})</span>
+              <span class="monitor-value">
+                剩余 {{ (diskInfo.free / 1024 / 1024 / 1024).toFixed(1) }}G / 总
+                {{ (diskInfo.size / 1024 / 1024 / 1024).toFixed(0) }}G
+              </span>
+            </div>
+            <el-progress
+              :percentage="
+                !diskInfo ||
+                !diskInfo.size ||
+                isNaN((diskInfo.size - diskInfo.free) / diskInfo.size)
+                  ? 0
+                  : Math.round(
+                      ((diskInfo.size - diskInfo.free) / diskInfo.size) * 100
+                    )
+              "
+              :show-text="false"
+              :stroke-width="4"
+              stroke-linecap="round"
+              status="success"
+            />
+          </div>
+
+          <!-- 新增：系统运行时间 -->
+          <div class="monitor-item" v-if="sysUsage.uptime">
+            <div class="monitor-label">
+              <span>系统运行时间</span>
+              <span class="monitor-value">{{
+                formatUptime(sysUsage.uptime)
+              }}</span>
+            </div>
+          </div>
+
+          <!-- 新增：进程、线程、句柄信息 -->
+          <div class="monitor-item" v-if="sysUsage.processCount">
+            <div class="monitor-label">
+              <span>系统进程</span>
+              <span class="monitor-value">{{ sysUsage.processCount }} 个</span>
+            </div>
+            <div class="monitor-detail-grid">
+              <div class="detail-item">
+                <span class="detail-label">线程:</span>
+                <span class="detail-value">{{
+                  sysUsage.threadCount || 0
+                }}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">句柄:</span>
+                <span class="detail-value">{{
+                  sysUsage.handleCount || 0
+                }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 更新状态提示 -->
+        <div class="panel-section update-section" v-if="updateMessage">
+          <h3 class="section-title">软件更新</h3>
+          <div class="update-info">
+            <div class="update-msg">{{ updateMessage }}</div>
+            <el-progress
+              v-if="updateProgress > 0 && updateProgress < 100"
+              :percentage="Math.round(updateProgress)"
+              :stroke-width="4"
+            />
+          </div>
         </div>
       </div>
-    </div>
+    </el-scrollbar>
 
     <!-- 快捷键提示 -->
     <div class="shortcuts-footer">
@@ -534,8 +553,11 @@
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from "vue";
 import { ElMessage, ElNotification } from "element-plus";
 import VideoPreview from "./VideoPreview.vue";
+import ThemeToggle from "./ThemeToggle.vue";
 
 // ==================== 类型定义 ====================
+type RecordPreset = "demo" | "game" | "compact" | "custom";
+
 interface RecorderConfig {
   sourceId: string;
   frameRate: number;
@@ -544,6 +566,7 @@ interface RecorderConfig {
   format: "mp4" | "mkv" | "webm";
   savePath: string;
   display_id: string;
+  preset: "demo" | "game" | "compact" | "custom";
 }
 
 // ==================== 响应式状态 ====================
@@ -558,7 +581,40 @@ const config = reactive<RecorderConfig>({
   replayBitRate: 15000,
   format: "mkv",
   savePath: "",
+  preset: "game", // 默认给用户一个爽的
 });
+const RECORD_MODE_OPTIONS = [
+  {
+    key: "demo",
+    title: "演示模式",
+    desc: "稳定清晰，适合教学 / 演示 / PPT",
+    icon: "🎬",
+    fps: 30,
+    bitrate: 8000,
+  },
+  {
+    key: "game",
+    title: "游戏模式",
+    desc: "高帧率，流畅记录游戏画面",
+    icon: "🎮",
+    fps: 60,
+    bitrate: 50000,
+  },
+  {
+    key: "compact",
+    title: "低体积模式",
+    desc: "文件更小，适合长时间录制",
+    icon: "📦",
+    fps: 24,
+    bitrate: 4000,
+  },
+  {
+    key: "custom",
+    title: "自定义模式",
+    desc: "手动调整帧率和码率",
+    icon: "⚙",
+  },
+] as const;
 
 const sources = ref<
   { id: string; name: string; thumbnail: string; display_id: string }[]
@@ -607,13 +663,15 @@ const statusText = computed(() => {
 
 // 估算每分钟文件大小（修正后的公式）
 const estimatedSizePerMin = computed(() => {
-  // bitRate 单位是 Kbps
-  // 转换为字节/秒：bitRate * 1000 / 8
-  // 每分钟：* 60
-  // 转换为 MB：/ (1024 * 1024)
-  const bytesPerSecond = (config.bitRate * 1000) / 8;
+  // 把 bitRate 当作「30fps 下的参考码率」
+  const fpsFactor = config.frameRate / 30;
+
+  const effectiveBitrateKbps = config.bitRate * fpsFactor;
+
+  const bytesPerSecond = (effectiveBitrateKbps * 1000) / 8;
   const bytesPerMinute = bytesPerSecond * 60;
   const mbPerMinute = bytesPerMinute / (1024 * 1024);
+
   return mbPerMinute.toFixed(1) + " MB";
 });
 
@@ -654,25 +712,25 @@ function formatUptime(seconds: number): string {
   const days = Math.floor(seconds / 86400);
   const hours = Math.floor((seconds % 86400) / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
-  
+  const s = parseInt((seconds % 60) + "");
+
   if (days > 0) {
-    return `${days}天 ${hours}小时 ${minutes}分钟`;
+    return `${days}天 ${hours}小时 ${minutes}分钟 ${s}秒`;
   } else if (hours > 0) {
-    return `${hours}小时 ${minutes}分钟`;
+    return `${hours}小时 ${minutes}分钟 ${s}秒`;
   } else {
-    return `${minutes}分钟`;
+    return `${minutes}分钟 ${s}秒`;
   }
 }
 
 function formatNumber(num: number): string {
   if (num >= 1000000) {
-    return (num / 1000000).toFixed(1) + 'M';
+    return (num / 1000000).toFixed(1) + "M";
   } else if (num >= 1000) {
-    return (num / 1000).toFixed(1) + 'K';
+    return (num / 1000).toFixed(1) + "K";
   }
   return num.toString();
 }
-
 
 function selectSource(id: string, display_id: string) {
   if (!isRecording.value) {
@@ -728,6 +786,8 @@ async function loadConfig() {
     if (savedConfig.replayBitRate)
       config.replayBitRate = savedConfig.replayBitRate;
     if (savedConfig.format) config.format = savedConfig.format;
+    if (savedConfig.preset) config.preset = savedConfig.preset;
+
     if (savedConfig.savePath) {
       config.savePath = savedConfig.savePath;
       refreshDiskInfo();
@@ -770,7 +830,8 @@ async function refreshSources() {
     sources.value = screenSources.length > 0 ? screenSources : _sources;
 
     if (
-      (!config.sourceId || !sources.value.find((s) => s.id === config.sourceId)) &&
+      (!config.sourceId ||
+        !sources.value.find((s) => s.id === config.sourceId)) &&
       sources.value.length > 0
     ) {
       config.sourceId = sources.value[0].id;
@@ -788,6 +849,7 @@ async function saveConfig() {
     replayBitRate: config.replayBitRate,
     format: config.format,
     savePath: config.savePath,
+    preset: config.preset,
   });
 }
 
@@ -811,6 +873,18 @@ watch(
     saveConfig();
   },
   { deep: true }
+);
+
+watch(
+  () => config.preset,
+  (preset) => {
+    const mode = RECORD_MODE_OPTIONS.find((m) => m.key === preset);
+    if (mode && preset !== "custom") {
+      config.frameRate = mode.fps;
+      config.bitRate = mode.bitrate;
+    }
+  },
+  { immediate: true }
 );
 
 // ==================== FFmpeg录制核心 ====================
@@ -847,24 +921,26 @@ async function startRecording() {
       recordingStartTime.value = Date.now();
       recordingDuration.value = 0;
       currentFileSize.value = 0;
-      
+
       // 生成文件路径（与后端逻辑一致）
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
       const fileName = `recording_${timestamp}.${config.format}`;
       recordingFilePath.value = `${config.savePath}\\${fileName}`;
-      
+
       durationTimer = setInterval(() => {
         recordingDuration.value++;
       }, 1000);
-      
+
       // 启动文件大小监控（每2秒更新一次）
       fileSizeTimer = setInterval(async () => {
         if (recordingFilePath.value) {
           try {
-            const size = await window.electronAPI.getFileSize(recordingFilePath.value);
+            const size = await window.electronAPI.getFileSize(
+              recordingFilePath.value
+            );
             currentFileSize.value = size;
           } catch (error) {
-            console.error('获取文件大小失败:', error);
+            console.error("获取文件大小失败:", error);
           }
         }
       }, 2000);
@@ -902,7 +978,7 @@ async function stopRecording() {
       clearInterval(durationTimer);
       durationTimer = null;
     }
-    
+
     if (fileSizeTimer) {
       clearInterval(fileSizeTimer);
       fileSizeTimer = null;
@@ -916,7 +992,7 @@ async function stopRecording() {
       isRecording: false,
       isReplay: false,
     });
-    
+
     // 重置文件大小和路径
     currentFileSize.value = 0;
     recordingFilePath.value = "";
@@ -928,6 +1004,9 @@ async function stopRecording() {
         type: "success",
         duration: 3000,
         position: "bottom-right",
+        onClick: () => {
+          window.electronAPI.openPath(result);
+        },
       });
     }
 
@@ -1003,7 +1082,6 @@ async function saveReplayRecording() {
 
 // ==================== 屏幕截图 ====================
 
-
 // ==================== 更新逻辑 ====================
 function checkForUpdates() {
   window.electronAPI.checkForUpdates();
@@ -1016,9 +1094,13 @@ async function takeScreenshot() {
   isStarting.value = true;
 
   try {
-    const savePath = config.savePath || (await window.electronAPI.getDefaultPath());
+    const savePath =
+      config.savePath || (await window.electronAPI.getDefaultPath());
     // 调用基于 FFmpeg 的后端截图接口，并传递正确的显示器 ID
-    const result = await window.electronAPI.ffmpegTakeScreenshot(config.display_id, savePath);
+    const result = await window.electronAPI.ffmpegTakeScreenshot(
+      config.display_id,
+      savePath
+    );
 
     if (result) {
       ElNotification({
@@ -1027,6 +1109,9 @@ async function takeScreenshot() {
         type: "success",
         duration: 3000,
         position: "bottom-right",
+        onClick: () => {
+          window.electronAPI.openPath(result);
+        },
       });
     } else {
       throw new Error("FFmpeg 截图返回空值");
@@ -1047,7 +1132,7 @@ onMounted(async () => {
 
   sysInfo.value = await window.electronAPI.getSystemInfo();
   refreshMonitorData();
-  monitorTimer = setInterval(refreshMonitorData, 2000);
+  monitorTimer = setInterval(refreshMonitorData, 1000);
   const _sources = await window.electronAPI.getSources();
   // 优先保留带有 "screen" 关键字的源（显示器）
 
@@ -1104,622 +1189,623 @@ onUnmounted(() => {
 });
 </script>
 
-<style scoped>
-/* 保持原有的样式不变 */
+<style lang="scss" scoped>
+/* =========================
+   SCSS 变量
+   ========================= */
+$primary: #6366f1;
+$primary-rgb: 99, 102, 241;
+$success: #10b981;
+$danger: #ef4444;
+$warning: #f59e0b;
+
+$radius-sm: 6px;
+$radius-md: 10px;
+$radius-lg: 16px;
+$radius-xl: 20px;
+
+$transition-fast: 0.2s ease;
+$transition-normal: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+
+/* =========================
+   根容器 + 主题
+   ========================= */
 .recorder-view {
+  height: 100vh;
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
-  --primary: #6366f1;
-  --primary-rgb: 99, 102, 241;
-  --success: #10b981;
-  --danger: #ef4444;
-  --warning: #f59e0b;
-}
 
-/* 主题颜色变量 */
-.recorder-view.dark {
-  --bg-primary: #0f0f14;
-  --bg-secondary: #16161d;
-  --bg-tertiary: #1e1e28;
-  --bg-hover: #252532;
-  --text-primary: #ffffff;
-  --text-secondary: #a0a0b0;
-  --text-muted: #606070;
-  --border-color: rgba(255, 255, 255, 0.08);
-}
+  --primary: #{$primary};
+  --primary-rgb: #{$primary-rgb};
+  --success: #{$success};
+  --danger: #{$danger};
+  --warning: #{$warning};
 
-.recorder-view.light {
-  --bg-primary: #fafafa;
-  --bg-secondary: #ffffff;
-  --bg-tertiary: #f3f4f6;
-  --bg-hover: #e5e7eb;
-  --text-primary: #111827;
-  --text-secondary: #4b5563;
-  --text-muted: #9ca3af;
-  --border-color: rgba(0, 0, 0, 0.08);
-}
+  &.dark {
+    --bg-primary: #0f0f14;
+    --bg-secondary: #16161d;
+    --bg-tertiary: #1e1e28;
+    --bg-hover: #262635;
 
-/* 其余样式保持不变，这里省略重复内容 */
-.title-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  background-color: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-color);
-  -webkit-app-region: drag;
-  user-select: none;
-}
+    --text-primary: #ffffff;
+    --text-secondary: #a0a0b0;
+    --text-muted: #6b7280;
 
-.app-logo {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-
-.logo-icon {
-  width: 24px;
-  height: 24px;
-  color: var(--primary);
-}
-
-.window-controls {
-  display: flex;
-  gap: 8px;
-  -webkit-app-region: no-drag;
-}
-
-.control-btn {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  color: var(--text-secondary);
-  transition: all 0.2s ease;
-  cursor: pointer;
-}
-
-.control-btn:hover {
-  background-color: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.control-btn.close:hover {
-  background-color: var(--danger);
-  color: white;
-}
-
-.control-btn svg {
-  width: 16px;
-  height: 16px;
-}
-
-/* 状态卡片 */
-.status-card {
-  margin: 16px;
-  padding: 20px;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  background-color: var(--bg-secondary);
-  border-radius: 20px;
-  border: 1px solid var(--border-color);
-}
-
-.status-indicator {
-  position: relative;
-  width: 48px;
-  height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.status-dot {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  transition: all 0.3s ease;
-}
-
-.status-dot.idle {
-  background-color: var(--success);
-}
-.status-dot.recording {
-  background-color: var(--danger);
-}
-.status-dot.replay-recording {
-  background-color: var(--warning);
-}
-
-.pulse-ring {
-  position: absolute;
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background-color: var(--danger);
-  animation: pulse 1.5s ease-out infinite;
-}
-
-@keyframes pulse {
-  0% {
-    transform: scale(0.5);
-    opacity: 0.5;
+    --border-color: rgba(255, 255, 255, 0.08);
   }
-  100% {
-    transform: scale(1.2);
+
+  &.light {
+    --bg-primary: #f8fafc;
+    --bg-secondary: #ffffff;
+    --bg-tertiary: #f1f5f9;
+    --bg-hover: #e5e7eb;
+
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-muted: #94a3b8;
+
+    --border-color: rgba(0, 0, 0, 0.08);
+  }
+
+  background: var(--bg-primary);
+  color: var(--text-primary);
+
+  /* =========================
+     Title Bar
+     ========================= */
+  .title-bar {
+    height: 44px;
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    -webkit-app-region: drag;
+
+    .app-logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+
+      .logo-icon {
+        width: 22px;
+        height: 22px;
+        color: var(--primary);
+      }
+    }
+
+    .window-controls {
+      display: flex;
+      gap: 6px;
+      -webkit-app-region: no-drag;
+
+      .control-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        background: transparent;
+        border: none;
+        color: var(--text-secondary);
+        cursor: pointer;
+        transition: $transition-fast;
+
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        &:hover {
+          background: var(--bg-hover);
+          color: var(--text-primary);
+        }
+
+        &.close:hover {
+          background: var(--danger);
+          color: #fff;
+        }
+
+        svg {
+          width: 14px;
+          height: 14px;
+        }
+      }
+    }
+  }
+
+  /* =========================
+     状态卡片
+     ========================= */
+  .status-card {
+    margin: 16px;
+    padding: 18px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+
+    background: var(--bg-secondary);
+    border-radius: $radius-xl;
+    border: 1px solid var(--border-color);
+
+    .status-indicator {
+      position: relative;
+      width: 42px;
+      height: 42px;
+
+      .pulse-ring {
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        background: var(--danger);
+        opacity: 0.3;
+        animation: pulse-ring 1.5s infinite;
+      }
+
+      .status-dot {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        margin: auto;
+        position: relative;
+        top: 14px;
+
+        &.idle {
+          background: var(--success);
+        }
+        &.recording {
+          background: var(--danger);
+        }
+        &.replay-recording {
+          background: var(--warning);
+        }
+      }
+    }
+
+    .status-info {
+      flex: 1;
+
+      .status-text {
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .duration {
+        font-size: 22px;
+        font-weight: 700;
+        font-family: "JetBrains Mono", monospace;
+        color: var(--primary);
+      }
+    }
+
+    .main-actions {
+      display: flex;
+      gap: 12px;
+
+      .record-btn,
+      .action-btn {
+        width: 56px;
+        height: 56px;
+        border-radius: $radius-lg;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: $transition-fast;
+        svg {
+          width: 22px;
+          height: 22px;
+        }
+      }
+
+      .record-btn {
+        background: linear-gradient(135deg, var(--primary), #8b5cf6);
+        color: #fff;
+
+        &.recording {
+          background: linear-gradient(135deg, var(--danger), #f87171);
+        }
+
+        &:hover {
+          transform: scale(1.05);
+        }
+        &:active {
+          transform: scale(0.95);
+        }
+      }
+
+      .action-btn {
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+
+        &:hover {
+          background: var(--bg-hover);
+          transform: scale(1.05);
+        }
+      }
+    }
+  }
+
+  /* =========================
+     设置面板
+     ========================= */
+  .settings-panel {
+    flex: 1;
+    margin: 0 16px 16px;
+    padding: 20px;
+    overflow-y: auto;
+
+    background: var(--bg-secondary);
+    border-radius: $radius-xl;
+    border: 1px solid var(--border-color);
+
+    .panel-section {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+
+      & + .panel-section {
+        margin-top: 24px;
+        padding-top: 24px;
+        border-top: 1px solid var(--border-color);
+      }
+    }
+
+    .section-title {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      color: var(--text-muted);
+    }
+
+    .setting-item {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+
+      .setting-label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        color: var(--text-secondary);
+
+        .icon-small {
+          width: 16px;
+          height: 16px;
+          color: var(--primary);
+        }
+
+        .badge.primary {
+          margin-left: auto;
+          padding: 2px 8px;
+          border-radius: $radius-sm;
+          background: var(--primary);
+          color: #fff;
+          font-size: 11px;
+        }
+      }
+    }
+
+    /* ===== 录制模式 ===== */
+    .record-mode-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 12px;
+
+      .record-mode-card {
+        padding: 14px;
+        border-radius: $radius-lg;
+        border: 1px solid var(--border-color);
+        background: var(--bg-tertiary);
+        cursor: pointer;
+        transition: $transition-fast;
+
+        &.active {
+          border-color: var(--primary);
+          box-shadow: 0 0 0 1px var(--primary);
+        }
+
+        &:hover {
+          background: var(--bg-hover);
+        }
+
+        .mode-header {
+          display: flex;
+          gap: 6px;
+          font-weight: 600;
+        }
+
+        .mode-desc {
+          margin-top: 6px;
+          font-size: 12px;
+          color: var(--text-muted);
+        }
+
+        .mode-meta {
+          margin-top: 8px;
+          font-size: 11px;
+          color: var(--text-secondary);
+        }
+      }
+    }
+
+    /* ===== 屏幕选择 ===== */
+    .source-selector {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 12px;
+
+      .source-card {
+        border-radius: $radius-lg;
+        border: 1px solid var(--border-color);
+        background: var(--bg-tertiary);
+        cursor: pointer;
+        overflow: hidden;
+
+        &.active {
+          border-color: var(--primary);
+        }
+
+        .source-thumb {
+          height: 100px;
+          background: #000;
+        }
+
+        .source-name {
+          padding: 8px;
+          font-size: 12px;
+          text-align: center;
+        }
+      }
+    }
+
+    /* =========================
+       编码格式
+       ========================= */
+    .format-group {
+      display: flex;
+      gap: 14px;
+
+      .format-btn {
+        min-width: 88px;
+        height: 44px;
+        padding: 0 22px;
+
+        border-radius: $radius-lg;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+
+        background: linear-gradient(
+          180deg,
+          var(--bg-tertiary),
+          rgba(0, 0, 0, 0.05)
+        );
+        border: 1px solid var(--border-color);
+        color: var(--text-secondary);
+
+        cursor: pointer;
+        transition: $transition-normal;
+
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        &:hover:not(:disabled) {
+          background: var(--bg-hover);
+          color: var(--text-primary);
+          transform: translateY(-1px);
+        }
+
+        &:active:not(:disabled) {
+          transform: scale(0.97);
+        }
+
+        &.active {
+          background: linear-gradient(135deg, var(--primary), #8b5cf6);
+          border-color: var(--primary);
+          color: #fff;
+
+          box-shadow: 0 6px 20px rgba(var(--primary-rgb), 0.45),
+            inset 0 1px 0 rgba(255, 255, 255, 0.25);
+        }
+
+        &:disabled {
+          opacity: 0.45;
+          cursor: not-allowed;
+        }
+      }
+    }
+
+    /* =========================
+       保存路径
+       ========================= */
+    .path-input-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+
+      input {
+        flex: 1;
+        height: 36px;
+        padding: 0 10px;
+        border-radius: $radius-md;
+
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        color: var(--text-primary);
+        font-size: 12px;
+
+        &:disabled {
+          opacity: 0.6;
+        }
+      }
+
+      .path-actions {
+        display: flex;
+        gap: 6px;
+
+        .icon-btn {
+          width: 36px;
+          height: 36px;
+          border-radius: $radius-md;
+
+          background: var(--bg-tertiary);
+          border: 1px solid var(--border-color);
+          color: var(--text-secondary);
+          cursor: pointer;
+          transition: $transition-fast;
+
+          display: flex;
+          align-items: center;
+          justify-content: center;
+
+          &:hover:not(:disabled) {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+          }
+
+          &:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+          }
+
+          svg {
+            width: 16px;
+            height: 16px;
+          }
+        }
+      }
+    }
+
+    /* =========================
+       系统资源监控
+       ========================= */
+    .monitor-section {
+      .monitor-item {
+        padding: 2px 16px;
+        border-radius: $radius-lg;
+        // background: var(--bg-tertiary);
+        // border: 1px solid var(--border-color);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+
+        .monitor-label {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          font-size: 12px;
+          font-weight: 600;
+          color: var(--text-secondary);
+
+          .monitor-value {
+            font-family: "JetBrains Mono", monospace;
+            color: var(--text-primary);
+          }
+        }
+
+        .monitor-detail {
+          font-size: 11px;
+          color: var(--text-muted);
+        }
+
+        .monitor-detail-grid {
+          display: grid;
+          grid-template-columns: repeat(2, auto);
+          gap: 6px 16px;
+          font-size: 11px;
+
+          .detail-item {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+
+            .detail-label {
+              color: var(--text-muted);
+            }
+
+            .detail-value {
+              font-family: "JetBrains Mono", monospace;
+              color: var(--text-primary);
+            }
+          }
+        }
+      }
+    }
+
+    /* =========================
+       更新提示
+       ========================= */
+    .update-section {
+      .update-info {
+        padding: 14px 16px;
+        border-radius: $radius-lg;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+
+        .update-msg {
+          font-size: 12px;
+          color: var(--text-secondary);
+          line-height: 1.6;
+        }
+      }
+    }
+  }
+
+  /* =========================
+     Footer
+     ========================= */
+  .shortcuts-footer {
+    padding: 12px;
+    display: flex;
+    justify-content: center;
+    gap: 32px;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border-color);
+
+    .shortcut-tip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-muted);
+
+      kbd {
+        padding: 4px 8px;
+        background: var(--bg-tertiary);
+        border-radius: $radius-sm;
+        border: 1px solid var(--border-color);
+        font-family: "JetBrains Mono", monospace;
+      }
+    }
+  }
+}
+
+/* =========================
+   动画
+   ========================= */
+@keyframes pulse-ring {
+  from {
+    transform: scale(0.6);
+    opacity: 0.6;
+  }
+  to {
+    transform: scale(1.4);
     opacity: 0;
   }
 }
 
-.status-info {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.status-text {
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.duration {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--primary);
-  letter-spacing: -0.02em;
-}
-
-.main-actions {
-  display: flex;
-  gap: 12px;
-}
-
-.record-btn {
-  width: 56px;
-  height: 56px;
-  border-radius: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, var(--primary), #8b5cf6);
-  color: white;
-  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  cursor: pointer;
-}
-
-.record-btn.recording {
-  background: linear-gradient(135deg, var(--danger), #f87171);
-}
-
-.record-btn:hover:not(:disabled) {
-  transform: scale(1.05);
-}
-
-.record-btn:active:not(:disabled) {
-  transform: scale(0.95);
-}
-
-.record-btn svg {
-  width: 24px;
-  height: 24px;
-}
-
-.record-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.action-btn {
-  width: 56px;
-  height: 56px;
-  border-radius: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  color: var(--text-primary);
-  transition: all 0.2s ease;
-  cursor: pointer;
-}
-
-.action-btn:hover:not(:disabled) {
-  background-color: var(--bg-hover);
-  transform: scale(1.05);
-}
-
-.action-btn svg {
-  width: 24px;
-  height: 24px;
-}
-
-/* 配置主面板 */
-.settings-panel {
-  flex: 1;
-  margin: 0 16px 16px;
-  padding: 20px;
-  background-color: var(--bg-secondary);
-  border-radius: 20px;
-  border: 1px solid var(--border-color);
-  overflow-y: auto;
-}
-
-.panel-section {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.section-title {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--text-muted);
-  margin-bottom: 4px;
-}
-
-.sub-section {
-  padding-top: 12px;
-  border-top: 1px solid var(--border-color);
-}
-
-.sub-title {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
-  margin-bottom: 12px;
-}
-
-.setting-item {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.setting-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-
-.icon-small {
-  width: 16px;
-  height: 16px;
-  color: var(--primary);
-}
-
-.badge {
-  padding: 2px 8px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.badge.primary {
-  background-color: var(--primary);
-  color: white;
-  margin-left: auto;
-}
-
-.size-estimate {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-left: 8px;
-  padding: 2px 6px;
-  background-color: var(--bg-tertiary);
-  border-radius: 6px;
-}
-
-.current-size {
-  font-size: 11px;
-  color: var(--success);
-  margin-left: 8px;
-  padding: 2px 8px;
-  background-color: rgba(76, 175, 80, 0.1);
-  border: 1px solid var(--success);
-  border-radius: 6px;
-  font-weight: 600;
-  animation: pulse 2s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.7;
-  }
-}
-
-
-/* 屏幕选择器 */
-.source-selector {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-}
-
-.source-card {
-  border: 2px solid transparent;
-  border-radius: 12px;
-  padding: 2px;
-  background-color: var(--bg-secondary);
-  transition: all 0.2s ease;
-  cursor: pointer;
-  overflow: hidden;
-}
-
-.source-card:hover {
-  background-color: var(--bg-tertiary);
-  transform: translateY(-2px);
-}
-
-.source-card.active {
-  border-color: var(--primary);
-  background-color: var(--bg-tertiary);
-  box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.2);
-}
-
-.source-thumb {
-  width: 100%;
-  aspect-ratio: 16/9;
-  border-radius: 8px;
-  background-color: black;
-  overflow: hidden;
-}
-
-.source-name {
-  padding: 8px;
-  font-size: 12px;
-  text-align: center;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.source-card.active .source-name {
-  color: var(--primary);
-  font-weight: 600;
-}
-
-.source-loading {
-  text-align: center;
-  padding: 20px;
-  font-size: 13px;
-  color: var(--text-muted);
-}
-
-/* 格式选择 */
-.format-group {
-  display: flex;
-  gap: 8px;
-}
-
-.format-btn {
-  flex: 1;
-  padding: 10px;
-  border-radius: 10px;
-  background-color: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 600;
-  transition: all 0.2s ease;
-  cursor: pointer;
-}
-
-.format-btn:hover:not(:disabled) {
-  border-color: var(--primary);
-  color: var(--text-primary);
-}
-
-.format-btn.active {
-  background-color: var(--primary);
-  border-color: var(--primary);
-  color: white;
-}
-
-.format-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* 路径输入组 */
-.path-input-group {
-  display: flex;
-  gap: 8px;
-}
-
-.path-input-group input {
-  flex: 1;
-  padding: 10px 14px;
-  border-radius: 10px;
-  background-color: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  color: var(--text-primary);
-  font-family: "JetBrains Mono", monospace;
-  font-size: 11px;
-  outline: none;
-}
-
-.path-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.icon-btn {
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 10px;
-  background-color: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
-  transition: all 0.2s ease;
-  cursor: pointer;
-}
-
-.icon-btn:hover:not(:disabled) {
-  border-color: var(--primary);
-  color: var(--primary);
-}
-
-.icon-btn svg {
-  width: 16px;
-  height: 16px;
-}
-
-/* 系统监控 */
-.monitor-section {
-  margin-top: 10px;
-  padding-top: 20px;
-  border-top: 1px solid var(--border-color);
-}
-
-.monitor-item {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 12px;
-}
-
-.monitor-label {
-  display: flex;
-  justify-content: space-between;
-  font-size: 13px;
-  color: var(--text-secondary);
-  padding: 0 4px;
-}
-
-.monitor-value {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--primary);
-}
-
-.monitor-detail {
-  font-size: 11px;
-  color: var(--text-muted);
-  padding: 0 4px;
-}
-
-.monitor-detail-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  padding: 8px 4px 0;
-}
-
-.detail-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 6px 10px;
-  background-color: var(--bg-tertiary);
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
-}
-
-.detail-label {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.detail-value {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-secondary);
-}
-
-/* 页脚快捷键 */
-.shortcuts-footer {
-  display: flex;
-  justify-content: center;
-  gap: 32px;
-  padding: 14px;
-  background-color: var(--bg-secondary);
-  border-top: 1px solid var(--border-color);
-}
-
-.shortcut-tip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.shortcut-tip kbd {
-  display: inline-block;
-  padding: 4px 8px;
-  background-color: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  font-family: "JetBrains Mono", monospace;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-secondary);
-}
-
-/* 滚动条美化 */
-.custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-}
-
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--border-color);
-  border-radius: 10px;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
-}
-
-/* 深度选择器修改 Element Plus 样式 */
-:deep(.el-slider__runway) {
-  background-color: var(--bg-tertiary);
-}
-
+/* =========================
+   Element Plus 深度样式
+   ========================= */
+:deep(.el-slider__runway),
 :deep(.el-progress-bar__outer) {
-  background-color: var(--bg-tertiary) !important;
-}
-
-/* 阴影效果 */
-.shadow-premium {
-  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.3);
-}
-
-.shadow-glow {
-  box-shadow: 0 4px 16px rgba(var(--primary-rgb), 0.4);
-}
-
-.shadow-soft {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  background: var(--bg-tertiary) !important;
 }
 </style>

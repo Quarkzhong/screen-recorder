@@ -302,10 +302,7 @@ export default class FFmpegService {
       }
 
       // 构建截图命令
-      const command = [
-        "-f",
-        "gdigrab",
-      ];
+      const command = ["-f", "gdigrab"];
 
       if (useOffsets) {
         command.push("-offset_x", x.toString());
@@ -313,14 +310,7 @@ export default class FFmpegService {
         command.push("-video_size", `${width}x${height}`);
       }
 
-      command.push(
-        "-i",
-        "desktop",
-        "-vframes",
-        "1",
-        "-y",
-        outputPath
-      );
+      command.push("-i", "desktop", "-vframes", "1", "-y", outputPath);
 
       console.log("[FFmpegService] 执行截图:", command.join(" "));
       const process = spawn(getFFmpegPath(), command);
@@ -356,6 +346,20 @@ export default class FFmpegService {
       isReplayBuffering: this.isReplayBuffering,
     };
   }
+  private getRecommendedMinBitrate(
+    width: number,
+    height: number,
+    fps: number
+  ): number {
+    const basePixels = 1920 * 1080;
+    const pixels = width * height;
+
+    const resolutionFactor = pixels / basePixels;
+    const fpsFactor = fps / 30;
+
+    // 1080p30 ≈ 2500 kbps
+    return Math.round(2500 * resolutionFactor * fpsFactor);
+  }
 
   /**
    * 获取所有显示器的信息和边界
@@ -390,7 +394,7 @@ export default class FFmpegService {
       const displays = this.getDisplayBounds();
       const display = displays.find((i) => i.id + "" === config.sourceId);
       console.log("[FFmpegService] 匹配显示器:", config.sourceId, display);
-      
+
       if (display) {
         const scale = display.scaleFactor || 1;
         x = Math.round(display.bounds.x * scale);
@@ -398,10 +402,12 @@ export default class FFmpegService {
         width = Math.round(display.bounds.width * scale);
         height = Math.round(display.bounds.height * scale);
         useOffsets = true;
-        
+
         // 仍然建议使用 scale 滤镜确保宽高为偶数，这是 H.264 编码的要求
         videoFilter = "scale=trunc(iw/2)*2:trunc(ih/2)*2";
-        console.log(`[FFmpegService] 物理区域: ${width}x${height} offset: ${x},${y}`);
+        console.log(
+          `[FFmpegService] 物理区域: ${width}x${height} offset: ${x},${y}`
+        );
       }
     }
 
@@ -420,24 +426,69 @@ export default class FFmpegService {
     }
 
     command.push("-i", inputDevice);
-    
-    // 添加滤镜和其他编码参数
-    command.push(
-      "-vf",
-      videoFilter,
-      "-c:v",
-      "libx264",
-      "-preset",
-      "ultrafast",
-      "-pix_fmt",
-      "yuv420p",
-      "-b:v",
-      `${config.bitRate}k`,
-      "-bufsize",
-      `${config.bitRate * 2}k`,
-      "-g",
-      (config.frameRate * 2).toString()
+
+    const recommendedMin = this.getRecommendedMinBitrate(
+      width,
+      height,
+      config.frameRate
     );
+
+    const forceLowBitrateMode = config.bitRate < recommendedMin;
+
+    if (forceLowBitrateMode) {
+      command.push(
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast", // 再慢会糊得更厉害
+        "-tune",
+        "zerolatency",
+        "-b:v",
+        `${config.bitRate}k`,
+        "-minrate",
+        `${config.bitRate}k`,
+        "-maxrate",
+        `${config.bitRate}k`,
+        "-bufsize",
+        `${config.bitRate * 2}k`,
+        "-x264-params",
+        "nal-hrd=cbr",
+        "-pix_fmt",
+        "yuv420p",
+        "-g",
+        (config.frameRate * 2).toString(),
+        "-keyint_min",
+        config.frameRate.toString(),
+        "-sc_threshold",
+        "0"
+      );
+    }
+    if (!forceLowBitrateMode) {
+      command.push(
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-tune",
+        "zerolatency",
+        "-crf",
+        "18",
+        "-profile:v",
+        "high",
+        "-pix_fmt",
+        "yuv420p",
+        "-g",
+        (config.frameRate * 2).toString(),
+        "-keyint_min",
+        config.frameRate.toString(),
+        "-sc_threshold",
+        "0"
+      );
+    }
+
+    if (forceLowBitrateMode && config.frameRate > 30) {
+      command.splice(command.indexOf("-framerate") + 1, 1, "30");
+    }
 
     // 根据格式添加特定参数
     switch (config.format) {
