@@ -111,6 +111,28 @@
             />
           </svg>
         </button>
+        <button
+          class="control-btn"
+          @click="resetAllSettings"
+          title="恢复默认设置"
+        >
+          <svg viewBox="0 0 24 24" fill="none">
+            <path
+              d="M20 21H4a2 2 0 01-2-2V5a2 2 0 012-2h3.5l1 2H4v12h16V7.8l1-.8V19a2 2 0 01-2 2z"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+            <path
+              d="M16 3h-4a2 2 0 00-2 2v1.5l-2 2V5a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2h-1.5l-2-2H16V5a2 2 0 00-2-2z"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </button>
         <button class="control-btn" @click="minimizeWindow">
           <svg viewBox="0 0 24 24" fill="none">
             <path
@@ -475,6 +497,41 @@
         <div class="panel-section monitor-section">
           <h3 class="section-title">系统资源监控</h3>
 
+          <!-- 资源监控图表 -->
+          <div class="charts-container">
+            <ResourceMonitorChart
+              chart-id="cpu-chart"
+              chart-title="CPU 使用率 (%)"
+              chart-type="cpu"
+              :chart-data="chartData.cpuUsage"
+              :timestamps="chartData.timestamps"
+              :max-value="100"
+              unit="%"
+              color="#ef4444"
+              :chart-height="120"
+            />
+            <ResourceMonitorChart
+              chart-id="memory-chart"
+              chart-title="内存占用 (MB)"
+              chart-type="memory"
+              :chart-data="chartData.memoryUsage"
+              :timestamps="chartData.timestamps"
+              unit="MB"
+              color="#3b82f6"
+              :chart-height="120"
+            />
+            <ResourceMonitorChart
+              chart-id="handle-chart"
+              chart-title="句柄数"
+              chart-type="handle"
+              :chart-data="chartData.handleCount"
+              :timestamps="chartData.timestamps"
+              unit="个"
+              color="#10b981"
+              :chart-height="120"
+            />
+          </div>
+
           <div class="monitor-item">
             <div class="monitor-label">
               <span>CPU 使用率</span>
@@ -601,7 +658,9 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from "vue";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
+import * as echarts from "echarts";
+import ResourceMonitorChart from "./ResourceMonitorChart.vue";
 import VideoPreview from "./VideoPreview.vue";
 import ThemeToggle from "./ThemeToggle.vue";
 
@@ -687,6 +746,15 @@ let fileSizeTimer: ReturnType<typeof setInterval> | null = null;
 const sysInfo = ref<any>({ cpuModel: "", cpuCores: 0, totalMem: 0 });
 const sysUsage = ref<any>({ cpuUsage: 0, freeMem: 1, totalMem: 1 });
 const diskInfo = ref<any>(null);
+
+// 资源监控图表
+const chartInstance = ref<echarts.ECharts | null>(null);
+const chartData = reactive({
+  timestamps: [] as string[],
+  cpuUsage: [] as number[],
+  memoryUsage: [] as number[],
+  handleCount: [] as number[],
+});
 
 // 更新状态
 const updateMessage = ref("");
@@ -782,6 +850,67 @@ function formatNumber(num: number): string {
   return num.toString();
 }
 
+// 更新图表数据
+function updateChartData() {
+  // 添加当前时间戳
+  const now = new Date();
+  const timeString = `${now.getHours().toString().padStart(2, "0")}:${now
+    .getMinutes()
+    .toString()
+    .padStart(2, "0")}:${now.getSeconds().toString().padStart(2, "0")}`;
+
+  chartData.timestamps.push(timeString);
+
+  // 添加CPU使用率数据
+  const cpuUsagePercent = sysUsage.value.cpuUsage
+    ? Math.round(sysUsage.value.cpuUsage * 100 * 10) / 10
+    : 0;
+  chartData.cpuUsage.push(cpuUsagePercent);
+
+  // 添加内存使用数据（GB）
+  const memoryUsedGB = usedMemGB.value;
+  chartData.memoryUsage.push(parseInt(memoryUsedGB * 1024 + ""));
+
+  // 添加句柄数数据
+  const handleCount = sysUsage.value.handleCount || 0;
+  chartData.handleCount.push(handleCount);
+
+  // 限制数据点数量，最多保留120个点
+  if (chartData.timestamps.length > 120) {
+    chartData.timestamps.shift();
+    chartData.cpuUsage.shift();
+    chartData.memoryUsage.shift();
+    chartData.handleCount.shift();
+  }
+
+  // 更新图表
+  if (chartInstance.value) {
+    chartInstance.value.setOption({
+      xAxis: {
+        data: chartData.timestamps,
+      },
+      series: [
+        {
+          data: chartData.cpuUsage,
+        },
+        {
+          data: chartData.memoryUsage,
+        },
+        {
+          data: chartData.handleCount,
+        },
+      ],
+    });
+  }
+}
+
+// 调整图表大小以适应容器
+function resizeChart() {
+  if (chartInstance.value) {
+    chartInstance.value.resize();
+  }
+}
+
 function selectSource(id: string, display_id: string) {
   if (!isRecording.value) {
     config.sourceId = id;
@@ -831,12 +960,26 @@ function closeWindow() {
 async function loadConfig() {
   try {
     const savedConfig = await window.electronAPI.getConfig();
-    if (savedConfig.frameRate) config.frameRate = savedConfig.frameRate;
-    if (savedConfig.bitRate) config.bitRate = savedConfig.bitRate;
-    if (savedConfig.replayBitRate)
+    if (typeof savedConfig.frameRate === "number")
+      config.frameRate = savedConfig.frameRate;
+    if (typeof savedConfig.bitRate === "number")
+      config.bitRate = savedConfig.bitRate;
+    if (typeof savedConfig.replayBitRate === "number")
       config.replayBitRate = savedConfig.replayBitRate;
-    if (savedConfig.format) config.format = savedConfig.format;
-    if (savedConfig.preset) config.preset = savedConfig.preset;
+    if (
+      typeof savedConfig.format === "string" &&
+      ["mp4", "mkv", "webm"].includes(savedConfig.format)
+    )
+      config.format = savedConfig.format as "mp4" | "mkv" | "webm";
+    if (
+      typeof savedConfig.preset === "string" &&
+      ["demo", "game", "compact", "custom"].includes(savedConfig.preset)
+    )
+      config.preset = savedConfig.preset as
+        | "demo"
+        | "game"
+        | "compact"
+        | "custom";
 
     if (savedConfig.savePath) {
       config.savePath = savedConfig.savePath;
@@ -1129,6 +1272,47 @@ function checkForUpdates() {
   window.electronAPI.checkForUpdates();
 }
 
+async function resetAllSettings() {
+  // 使用Element Plus的确认对话框
+  try {
+    await ElMessageBox.confirm(
+      "此操作将恢复所有设置为默认值，并清除所有自定义配置和缓存数据。是否继续？",
+      "警告",
+      {
+        confirmButtonText: "确定",
+        cancelButtonText: "取消",
+        type: "warning",
+      }
+    );
+  } catch {
+    // 用户取消操作
+    return;
+  }
+
+  try {
+    // 重置配置
+    await window.electronAPI.resetConfig();
+
+    // 重新加载配置
+    await loadConfig();
+
+    // 重新初始化主题
+    await initTheme();
+
+    // 重置UI配置到默认值
+    config.frameRate = 60;
+    config.bitRate = 50000;
+    config.replayBitRate = 15000;
+    config.format = "mkv";
+    config.preset = "game";
+
+    ElMessage.success("所有设置已恢复默认值");
+  } catch (error: any) {
+    console.error("Reset settings failed:", error);
+    ElMessage.error("恢复默认设置失败: " + error.message);
+  }
+}
+
 // ==================== 生命周期 ====================
 
 async function takeScreenshot() {
@@ -1171,6 +1355,12 @@ onMounted(async () => {
   sysInfo.value = await window.electronAPI.getSystemInfo();
   refreshMonitorData();
   monitorTimer = setInterval(refreshMonitorData, 1000);
+
+  // 设置图表更新定时器（每2秒更新一次）
+  chartUpdateTimer = setInterval(() => {
+    updateChartData();
+  }, 2000);
+
   const _sources = await window.electronAPI.getSources();
   // 优先保留带有 "screen" 关键字的源（显示器）
 
@@ -1221,10 +1411,18 @@ onMounted(async () => {
   }, 1000);
 });
 
+let chartUpdateTimer: NodeJS.Timeout | null = null;
+
 onUnmounted(() => {
   if (durationTimer) clearInterval(durationTimer);
   if (monitorTimer) clearInterval(monitorTimer);
   if (sourceTimer) clearInterval(sourceTimer);
+  if (chartUpdateTimer) clearInterval(chartUpdateTimer);
+
+  // 清理图表实例
+  if (chartInstance.value) {
+    chartInstance.value.dispose();
+  }
 
   // 清理FFmpeg资源
   window.electronAPI.ffmpegStopReplayBuffer();
@@ -1732,6 +1930,17 @@ $transition-normal: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
        系统资源监控
        ========================= */
     .monitor-section {
+      .chart-container {
+        margin-bottom: 16px;
+        .chart {
+          width: 100%;
+          height: 300px;
+          background: var(--bg-tertiary);
+          border-radius: $radius-lg;
+          border: 1px solid var(--border-color);
+        }
+      }
+
       .monitor-item {
         padding: 2px 16px;
         border-radius: $radius-lg;

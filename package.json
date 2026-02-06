@@ -1,7 +1,7 @@
 {
   "name": "ultraclear-recorder",
   "productName": "UltraClear Recorder",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "轻量级 Windows 桌面录屏工具",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -15,6 +15,7 @@
     "@vueuse/core": "^14.2.0",
     "build": "^0.1.4",
     "check-disk-space": "^3.4.0",
+    "echarts": "^6.0.0",
     "electron-store": "^8.1.0",
     "electron-updater": "^6.7.3",
     "element-plus": "^2.5.3",

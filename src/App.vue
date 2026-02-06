@@ -29,10 +29,10 @@
                   <kbd>Ctrl+F12</kbd>
                   <span>开始 / 停止录制</span>
                 </div>
-                <div class="shortcut-row">
+                <!-- <div class="shortcut-row">
                   <kbd>Ctrl+F11</kbd>
                   <span>保存过去 2 分钟回溯</span>
-                </div>
+                </div> -->
                 <div class="shortcut-row">
                   <kbd>Ctrl+F10</kbd>
                   <span>截取当前屏幕</span>

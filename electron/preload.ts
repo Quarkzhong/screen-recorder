@@ -42,6 +42,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
   saveConfig: (config: Record<string, unknown>): Promise<boolean> =>
     ipcRenderer.invoke("save-config", config),
 
+  // 重置配置
+  resetConfig: (): Promise<boolean> => ipcRenderer.invoke("reset-config"),
+
   // 获取应用名称
   getAppName: (): Promise<string> => ipcRenderer.invoke("get-app-name"),
 
@@ -156,6 +159,7 @@ export interface ElectronAPI {
   openPath: (path: string) => Promise<string>;
   getConfig: () => Promise<Record<string, unknown>>;
   saveConfig: (config: Record<string, unknown>) => Promise<boolean>;
+  resetConfig: () => Promise<boolean>;
   getDefaultPath: () => Promise<string>;
   showSaveDialog: (options: {
     defaultPath: string;

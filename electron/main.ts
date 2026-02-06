@@ -377,6 +377,23 @@ function setupIPC() {
     return true;
   });
 
+  // 重置配置到默认值
+  ipcMain.handle("reset-config", () => {
+    // 重置为默认配置
+    store.clear(); // 清空所有配置
+    // 重新设置默认值
+    store.set("guideShown", false);
+    store.set("resolution", "native");
+    store.set("frameRate", 60);
+    store.set("bitRate", 50000);
+    store.set("replayBitRate", 15000);
+    store.set("format", "mkv");
+    store.set("savePath", join(app.getPath("documents"), APP_NAME));
+    store.set("theme", "dark");
+    store.set("themeManual", false);
+    return true;
+  });
+
   // 获取默认保存路径
   ipcMain.handle("get-default-path", () => {
     return join(app.getPath("documents"), "ScreenRecordings");
